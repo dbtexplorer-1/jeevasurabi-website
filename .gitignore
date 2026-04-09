@@ -41,4 +41,8 @@ yarn-error.log*
 next-env.d.ts
 
 #virtual environment
-\backend\venv\
+# backend/venv/Include
+# backend/venv/Scripts
+# backend/venv/Lib
+**/venv/
+**/__pycache__/

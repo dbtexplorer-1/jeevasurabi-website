@@ -1,6 +1,7 @@
 import type { Metadata } from "next";
 import { Geist, Geist_Mono } from "next/font/google";
 import "./globals.css";
+import { AuthProvider } from "@/context/AuthContext";
 import { CartProvider } from "@/context/CartContext";
 import { WishlistProvider } from "@/context/WishlistContext";
 import LayoutContent from "@/components/LayoutContent";
@@ -31,11 +32,14 @@ export default function RootLayout({
   return (
     <html lang="en">
       <body className={`${geistSans.variable} ${geistMono.variable} antialiased font-medium`}>
-        <CartProvider>
-          <WishlistProvider>
-            <LayoutContent>{children}</LayoutContent>
-          </WishlistProvider>
-        </CartProvider>
+        {/* AuthProvider must be the outermost provider so others can access auth state if needed */}
+        <AuthProvider>
+          <CartProvider>
+            <WishlistProvider>
+              <LayoutContent>{children}</LayoutContent>
+            </WishlistProvider>
+          </CartProvider>
+        </AuthProvider>
       </body>
     </html>
   );
