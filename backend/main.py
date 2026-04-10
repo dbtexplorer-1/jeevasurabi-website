@@ -13,12 +13,12 @@ from database import engine, get_db
 # Create the database tables if they don't exist
 models.Base.metadata.create_all(bind=engine)
 
-app = FastAPI(title="E-commerce API")
+app = FastAPI(title="JeevaSurabi E-commerce API")
 
-# Configure CORS so Next.js (usually on port 3000) can talk to FastAPI
+# Configure CORS
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["http://localhost:3000"], # Update this when deploying
+    allow_origins=["http://localhost:3000"],
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
@@ -26,38 +26,34 @@ app.add_middleware(
 
 @app.get("/")
 def read_root():
-    return {"message": "Welcome to the E-commerce Backend API!"}
+    return {"message": "Welcome to the JeevaSurabi API!"}
 
 # --- PRODUCT ROUTES ---
 
 @app.get("/products", response_model=List[models.ProductResponse])
 def get_products(db: Session = Depends(get_db)):
-    # Fetch all products from the database
-    products = db.query(models.ProductDB).all()
-    return products
+    return db.query(models.ProductDB).all()
 
 
-# --- AUTHENTICATION ROUTES (OTP & Login) ---
+# --- AUTHENTICATION: PHONE OTP ROUTES ---
 
 @app.post("/send-otp", status_code=status.HTTP_200_OK)
-def send_otp(request: models.EmailRequest, db: Session = Depends(get_db)):
-    # 1. Check if user already has an account
-    db_user = db.query(models.UserDB).filter(models.UserDB.email == request.email).first()
-    if db_user:
-        raise HTTPException(status_code=400, detail="Email already registered. Please log in.")
+def send_otp(request: models.PhoneRequest, db: Session = Depends(get_db)):
+    # 1. Check if user already exists
+    db_user = db.query(models.UserDB).filter(models.UserDB.phone_number == request.phone_number).first()
     
-    # 2. Generate OTP and calculate expiration (10 minutes from now)
+    # 2. Generate OTP
     otp_code = auth.generate_otp()
     expiration_time = datetime.now(timezone.utc) + timedelta(minutes=10)
     
-    # 3. Save OTP to database (if they requested one before, overwrite it)
-    existing_otp = db.query(models.OTPVerificationDB).filter(models.OTPVerificationDB.email == request.email).first()
+    # 3. Save/Update OTP in DB
+    existing_otp = db.query(models.OTPVerificationDB).filter(models.OTPVerificationDB.phone_number == request.phone_number).first()
     if existing_otp:
         existing_otp.otp_code = otp_code
         existing_otp.expires_at = expiration_time.replace(tzinfo=None)
     else:
         new_otp = models.OTPVerificationDB(
-            email=request.email, 
+            phone_number=request.phone_number, 
             otp_code=otp_code, 
             expires_at=expiration_time.replace(tzinfo=None)
         )
@@ -65,58 +61,117 @@ def send_otp(request: models.EmailRequest, db: Session = Depends(get_db)):
     
     db.commit()
     
-    # 4. Send the email via Resend!
-    auth.send_otp_email(request.email, otp_code)
+    # 4. Send SMS (Terminal Mock)
+    auth.send_sms_otp(request.phone_number, otp_code)
     
-    return {"message": "OTP sent successfully. Please check your email."}
+    return {"message": f"OTP sent to {request.phone_number}"}
 
 
-@app.post("/verify-otp-and-signup", response_model=models.UserResponse, status_code=status.HTTP_201_CREATED)
+@app.post("/verify-otp-and-signup") # Returns token for auto-login
 def verify_otp_and_signup(request: models.VerifyOTPRequest, db: Session = Depends(get_db)):
-    # 1. Find the OTP record for this email
-    otp_record = db.query(models.OTPVerificationDB).filter(models.OTPVerificationDB.email == request.email).first()
+    # 1. Verify OTP
+    otp_record = db.query(models.OTPVerificationDB).filter(models.OTPVerificationDB.phone_number == request.phone_number).first()
     
-    if not otp_record:
-        raise HTTPException(status_code=400, detail="No OTP requested for this email.")
+    if not otp_record or otp_record.otp_code != request.otp_code:
+        raise HTTPException(status_code=400, detail="Invalid OTP")
         
-    # 2. Check if OTP is correct
-    if otp_record.otp_code != request.otp_code:
-        raise HTTPException(status_code=400, detail="Invalid OTP code.")
-        
-    # 3. Check if OTP is expired (Comparing UTC to UTC)
     if datetime.now(timezone.utc).replace(tzinfo=None) > otp_record.expires_at:
-        raise HTTPException(status_code=400, detail="OTP has expired. Please request a new one.")
+        raise HTTPException(status_code=400, detail="OTP expired")
         
-    # 4. Success! Hash the password and create the user
-    hashed_password = auth.get_password_hash(request.password)
-    new_user = models.UserDB(email=request.email, hashed_password=hashed_password)
+    # 2. Check if user exists
+    db_user = db.query(models.UserDB).filter(models.UserDB.phone_number == request.phone_number).first()
+    if db_user:
+        raise HTTPException(status_code=400, detail="Phone number already registered")
+
+    # 3. Create User
+    hashed_pw = auth.get_password_hash(request.password) if request.password else None
+    new_user = models.UserDB(
+        phone_number=request.phone_number,
+        full_name=request.full_name,
+        hashed_password=hashed_pw
+    )
     db.add(new_user)
-    
-    # 5. Delete the OTP record so it can't be used again
     db.delete(otp_record)
     db.commit()
     db.refresh(new_user)
     
-    return new_user
+    # 4. AUTO-LOGIN: Generate token immediately
+    access_token = auth.create_access_token(data={"sub": new_user.phone_number})
+    
+    return {
+        "access_token": access_token, 
+        "token_type": "bearer",
+        "full_name": new_user.full_name
+    }
 
 
-@app.post("/login", response_model=models.Token)
+# --- AUTHENTICATION: GOOGLE LOGIN ---
+
+@app.post("/google-login")
+def google_login(request: models.GoogleLoginRequest, db: Session = Depends(get_db)):
+    # 1. Verify the Google Token
+    google_data = auth.verify_google_token(request.token)
+    if not google_data:
+        raise HTTPException(status_code=400, detail="Invalid Google token")
+
+    email = google_data['email']
+    google_id = google_data['sub']
+    name = google_data.get('name') # This is the Google Display Name
+    picture = google_data.get('picture')
+
+    # 2. Check if user exists
+    user = db.query(models.UserDB).filter(
+        (models.UserDB.google_id == google_id) | (models.UserDB.email == email)
+    ).first()
+
+    if not user:
+        user = models.UserDB(
+            email=email,
+            google_id=google_id,
+            full_name=name,
+            profile_pic=picture,
+            is_active=True
+        )
+        db.add(user)
+    else:
+        # Update name/picture if they've changed on Google
+        user.google_id = google_id
+        user.profile_pic = picture
+        user.full_name = name
+        
+    db.commit()
+    db.refresh(user)
+
+    # 3. Create JWT
+    access_token = auth.create_access_token(data={"sub": user.email or user.phone_number})
+    
+    return {
+        "access_token": access_token, 
+        "token_type": "bearer",
+        "full_name": user.full_name # Return real name for the UI
+    }
+
+
+# --- STANDARD LOGIN ---
+
+@app.post("/login")
 def login_for_access_token(form_data: OAuth2PasswordRequestForm = Depends(), db: Session = Depends(get_db)):
-    # Note: OAuth2 expects the field to be called "username", but we are using emails.
-    # So the user will pass their email into the "username" field.
+    user = db.query(models.UserDB).filter(
+        (models.UserDB.phone_number == form_data.username) | 
+        (models.UserDB.email == form_data.username)
+    ).first()
     
-    # 1. Find the user by email
-    user = db.query(models.UserDB).filter(models.UserDB.email == form_data.username).first()
-    
-    # 2. Check if user exists and password is correct
-    if not user or not auth.verify_password(form_data.password, user.hashed_password):
+    if not user or not user.hashed_password or not auth.verify_password(form_data.password, user.hashed_password):
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Incorrect email or password",
+            detail="Incorrect phone/email or password",
             headers={"WWW-Authenticate": "Bearer"},
         )
     
-    # 3. Generate the JWT Token
-    access_token = auth.create_access_token(data={"sub": user.email})
+    access_token = auth.create_access_token(data={"sub": form_data.username})
     
-    return {"access_token": access_token, "token_type": "bearer"}
+    return {
+        "access_token": access_token, 
+        "token_type": "bearer",
+        "full_name": user.full_name
+    }

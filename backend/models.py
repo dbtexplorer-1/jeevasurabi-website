@@ -25,8 +25,16 @@ class UserDB(Base):
     __tablename__ = "users"
 
     id = Column(Integer, primary_key=True, index=True)
-    email = Column(String, unique=True, index=True)
-    hashed_password = Column(String)
+    # Fields for Phone/Email Login
+    full_name = Column(String, nullable=True)
+    email = Column(String, unique=True, index=True, nullable=True)
+    phone_number = Column(String, unique=True, index=True, nullable=True)
+    hashed_password = Column(String, nullable=True) # Nullable for Google-only users
+    
+    # Fields for Google Login
+    google_id = Column(String, unique=True, index=True, nullable=True)
+    profile_pic = Column(String, nullable=True)
+    
     is_active = Column(Boolean, default=True)
     is_admin = Column(Boolean, default=False)
 
@@ -34,7 +42,7 @@ class OTPVerificationDB(Base):
     __tablename__ = "otp_codes"
 
     id = Column(Integer, primary_key=True, index=True)
-    email = Column(String, index=True)
+    phone_number = Column(String, index=True) # Switched from email to phone
     otp_code = Column(String)
     expires_at = Column(DateTime)
 
@@ -58,13 +66,12 @@ class ProductResponse(BaseModel):
         from_attributes = True
 
 # --- User & Auth Schemas ---
-class UserCreate(BaseModel):
-    email: str
-    password: str
-
 class UserResponse(BaseModel):
     id: int
-    email: str
+    full_name: Optional[str] = None
+    email: Optional[str] = None
+    phone_number: Optional[str] = None
+    profile_pic: Optional[str] = None
     is_active: bool
     is_admin: bool
 
@@ -75,11 +82,16 @@ class Token(BaseModel):
     access_token: str
     token_type: str
 
-# --- OTP Schemas ---
-class EmailRequest(BaseModel):
-    email: str
+# --- OTP Schemas (Mobile Focused) ---
+class PhoneRequest(BaseModel):
+    phone_number: str
 
 class VerifyOTPRequest(BaseModel):
-    email: str
+    phone_number: str
     otp_code: str
-    password: str
+    full_name: str
+    password: Optional[str] = None # Optional if they just want OTP login
+
+# --- Google Login Schema ---
+class GoogleLoginRequest(BaseModel):
+    token: str # The credential token sent by the Google frontend button
