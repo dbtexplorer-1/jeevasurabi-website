@@ -1,6 +1,7 @@
 import type { Metadata } from "next";
 import { Geist, Geist_Mono } from "next/font/google";
 import "./globals.css";
+import { GoogleOAuthProvider } from '@react-oauth/google';
 import { AuthProvider } from "@/context/AuthContext";
 import { CartProvider } from "@/context/CartContext";
 import { WishlistProvider } from "@/context/WishlistContext";
@@ -32,14 +33,16 @@ export default function RootLayout({
   return (
     <html lang="en">
       <body className={`${geistSans.variable} ${geistMono.variable} antialiased font-medium`}>
-        {/* AuthProvider must be the outermost provider so others can access auth state if needed */}
-        <AuthProvider>
-          <CartProvider>
-            <WishlistProvider>
-              <LayoutContent>{children}</LayoutContent>
-            </WishlistProvider>
-          </CartProvider>
-        </AuthProvider>
+        {/* I've updated the clientId below with your real ID from your screenshot */}
+        <GoogleOAuthProvider clientId="886676518253-p11r15ftrr291kkb77t5mdd3aus0hhlv.apps.googleusercontent.com">
+          <AuthProvider>
+            <CartProvider>
+              <WishlistProvider>
+                <LayoutContent>{children}</LayoutContent>
+              </WishlistProvider>
+            </CartProvider>
+          </AuthProvider>
+        </GoogleOAuthProvider>
       </body>
     </html>
   );

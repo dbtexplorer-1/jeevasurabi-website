@@ -1,33 +1,46 @@
 "use client";
-import React, { useState } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
 import Image from 'next/image';
-import { ShoppingCart, User, Menu, X, Heart, LogOut } from 'lucide-react';
-import { useAuth } from '@/context/AuthContext'; // Import our new hook
+import { 
+  ShoppingCart, User, Menu, X, Heart, LogOut, 
+  Package, Settings, UserCircle, ChevronRight, LogIn 
+} from 'lucide-react';
+import { useAuth } from '@/context/AuthContext';
 
 interface NavbarProps {
   cartCount: number;
   wishlistCount: number;
   onOpenCart: () => void;
-  onOpenProfile: () => void;
+  onOpenProfile: () => void; // Keeping for props compatibility
   onOpenWishlist: () => void;
 }
 
-export default function Navbar({ cartCount, wishlistCount, onOpenCart, onOpenProfile, onOpenWishlist }: NavbarProps) {
+export default function Navbar({ cartCount, wishlistCount, onOpenCart, onOpenWishlist }: NavbarProps) {
   const pathname = usePathname();
   const [isMenuOpen, setIsMenuOpen] = useState(false);
+  const [showProfileMenu, setShowProfileMenu] = useState(false);
+  const menuRef = useRef<HTMLDivElement>(null);
   
-  // Get auth state from our Context
   const { isLoggedIn, user, logout } = useAuth();
 
-  // Helper function to apply active styles for desktop
+  // Close dropdown when clicking outside
+  useEffect(() => {
+    function handleClickOutside(event: MouseEvent) {
+      if (menuRef.current && !menuRef.current.contains(event.target as Node)) {
+        setShowProfileMenu(false);
+      }
+    }
+    document.addEventListener("mousedown", handleClickOutside);
+    return () => document.removeEventListener("mousedown", handleClickOutside);
+  }, []);
+
   const activeStyles = (path: string) => 
     pathname === path 
       ? "text-white border-b-2 border-white pb-1" 
       : "text-green-100 hover:text-white transition-colors pb-1";
 
-  // Helper for mobile active styles
   const mobileActiveStyles = (path: string) =>
     pathname === path ? "text-green-900 font-black" : "text-gray-700";
 
@@ -59,11 +72,8 @@ export default function Navbar({ cartCount, wishlistCount, onOpenCart, onOpenPro
         </div>
 
         {/* ACTIONS */}
-        <div className="flex items-center space-x-4 md:space-x-8 text-white">
-          <button 
-            onClick={onOpenWishlist} 
-            className="relative hover:text-green-200 transition-transform hover:scale-110"
-          >
+        <div className="flex items-center space-x-4 md:space-x-8 text-white relative">
+          <button onClick={onOpenWishlist} className="relative hover:text-green-200 transition-transform hover:scale-110">
             <Heart className="w-6 h-6 md:w-8 md:h-8" strokeWidth={1.5} />
             {wishlistCount > 0 && (
               <span className="absolute -top-1 -right-1 bg-red-500 text-white text-[10px] rounded-full px-1.5 md:px-2 py-0.5 font-bold animate-bounce shadow-md">
@@ -72,10 +82,7 @@ export default function Navbar({ cartCount, wishlistCount, onOpenCart, onOpenPro
             )}
           </button>
 
-          <button 
-            onClick={onOpenCart} 
-            className="relative hover:text-green-200 transition-transform hover:scale-110"
-          >
+          <button onClick={onOpenCart} className="relative hover:text-green-200 transition-transform hover:scale-110">
             <ShoppingCart className="w-6 h-6 md:w-8 md:h-8" strokeWidth={1.5} />
             {cartCount > 0 && (
               <span className="absolute -top-1 -right-1 bg-yellow-500 text-white text-[10px] rounded-full px-1.5 md:px-2 py-0.5 font-bold animate-bounce shadow-md">
@@ -84,29 +91,85 @@ export default function Navbar({ cartCount, wishlistCount, onOpenCart, onOpenPro
             )}
           </button>
 
-          {/* AUTHENTICATION SECTION */}
-          {isLoggedIn ? (
-            <div className="flex items-center space-x-4 border-l border-green-800 pl-4 md:pl-8">
-              <div className="hidden md:block text-right">
-                <p className="text-[10px] uppercase tracking-widest text-green-300 font-bold">Logged in as</p>
-                <p className="text-xs font-bold truncate max-w-[120px]">{user?.email}</p>
-              </div>
-              <button 
-                onClick={logout}
-                className="hover:text-red-400 transition-all hover:scale-110 flex items-center gap-2 bg-green-950/50 p-2 md:p-3 rounded-xl border border-green-800"
-                title="Logout"
-              >
-                <LogOut className="w-5 h-5 md:w-6 md:h-6" strokeWidth={2} />
-              </button>
-            </div>
-          ) : (
-            <Link 
-              href="/login"
-              className="hover:text-green-200 transition-transform hover:scale-110"
+          {/* PROFILE DROPDOWN TRIGGER */}
+          <div className="relative" ref={menuRef}>
+            <button 
+              onClick={() => setShowProfileMenu(!showProfileMenu)}
+              className={`flex items-center gap-2 p-1 rounded-full transition-all ${showProfileMenu ? 'bg-white text-green-900 scale-110' : 'hover:text-green-200 hover:scale-110'}`}
             >
               <User className="w-6 h-6 md:w-8 md:h-8" strokeWidth={1.5} />
-            </Link>
-          )}
+            </button>
+
+            {/* THE DROPDOWN MODAL */}
+            {showProfileMenu && (
+              <div className="absolute right-0 mt-4 w-72 bg-white rounded-[2rem] shadow-2xl border border-gray-100 overflow-hidden animate-in fade-in zoom-in-95 duration-200 text-gray-900">
+                
+                {/* Header section */}
+                <div className="p-6 bg-gray-50 border-b border-gray-100">
+                  {isLoggedIn ? (
+                    <div>
+                      <p className="text-[10px] uppercase tracking-widest text-gray-400 font-bold mb-1">Welcome Back</p>
+                      <p className="text-sm font-black text-green-900 truncate">{user?.email}</p>
+                    </div>
+                  ) : (
+                    <div>
+                      <p className="text-[10px] uppercase tracking-widest text-gray-400 font-bold mb-1">Member Access</p>
+                      <p className="text-sm font-black text-green-900">Join Jeevasurabi</p>
+                    </div>
+                  )}
+                </div>
+
+                {/* Menu items */}
+                <div className="p-4 space-y-1">
+                  {isLoggedIn ? (
+                    <>
+                      <Link href="/profile" onClick={() => setShowProfileMenu(false)} className="flex items-center justify-between p-4 rounded-2xl hover:bg-green-50 transition-colors group">
+                        <div className="flex items-center gap-3">
+                          <UserCircle size={20} className="text-gray-400 group-hover:text-green-700" />
+                          <span className="text-sm font-bold text-gray-700">My Profile</span>
+                        </div>
+                        <ChevronRight size={14} className="text-gray-300" />
+                      </Link>
+                      <Link href="/orders" onClick={() => setShowProfileMenu(false)} className="flex items-center justify-between p-4 rounded-2xl hover:bg-green-50 transition-colors group">
+                        <div className="flex items-center gap-3">
+                          <Package size={20} className="text-gray-400 group-hover:text-green-700" />
+                          <span className="text-sm font-bold text-gray-700">My Orders</span>
+                        </div>
+                        <ChevronRight size={14} className="text-gray-300" />
+                      </Link>
+                      <Link href="/settings" onClick={() => setShowProfileMenu(false)} className="flex items-center justify-between p-4 rounded-2xl hover:bg-green-50 transition-colors group">
+                        <div className="flex items-center gap-3">
+                          <Settings size={20} className="text-gray-400 group-hover:text-green-700" />
+                          <span className="text-sm font-bold text-gray-700">Settings</span>
+                        </div>
+                        <ChevronRight size={14} className="text-gray-300" />
+                      </Link>
+                      <div className="h-px bg-gray-100 my-2 mx-2"></div>
+                      <button 
+                        onClick={() => { logout(); setShowProfileMenu(false); }} 
+                        className="w-full flex items-center gap-3 p-4 rounded-2xl hover:bg-red-50 text-red-600 transition-colors"
+                      >
+                        <LogOut size={20} />
+                        <span className="text-sm font-bold">Sign Out</span>
+                      </button>
+                    </>
+                  ) : (
+                    <Link 
+                      href="/login" 
+                      onClick={() => setShowProfileMenu(false)} 
+                      className="flex items-center justify-between p-4 bg-green-900 text-white rounded-2xl hover:bg-green-800 transition-all shadow-lg"
+                    >
+                      <div className="flex items-center gap-3">
+                        <LogIn size={20} />
+                        <span className="text-sm font-bold uppercase tracking-widest">Sign In / Join</span>
+                      </div>
+                      <ChevronRight size={14} />
+                    </Link>
+                  )}
+                </div>
+              </div>
+            )}
+          </div>
         </div>
       </div>
 
@@ -117,19 +180,6 @@ export default function Navbar({ cartCount, wishlistCount, onOpenCart, onOpenPro
           <Link href="/shop" onClick={() => setIsMenuOpen(false)} className={mobileActiveStyles('/shop')}>Shop</Link>
           <Link href="/about" onClick={() => setIsMenuOpen(false)} className={mobileActiveStyles('/about')}>About</Link>
           <Link href="/contact" onClick={() => setIsMenuOpen(false)} className={mobileActiveStyles('/contact')}>Contact Us</Link>
-          
-          {/* Mobile Auth Button */}
-          <div className="pt-4 border-t border-gray-100">
-            {isLoggedIn ? (
-              <button onClick={() => { logout(); setIsMenuOpen(false); }} className="text-red-600 flex items-center gap-4">
-                <LogOut size={20} /> Logout
-              </button>
-            ) : (
-              <Link href="/login" onClick={() => setIsMenuOpen(false)} className="text-green-900 flex items-center gap-4">
-                <User size={20} /> Login / Signup
-              </Link>
-            )}
-          </div>
         </div>
       )}
     </nav>
