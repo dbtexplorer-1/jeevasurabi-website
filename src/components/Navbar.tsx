@@ -109,12 +109,15 @@ export default function Navbar({ cartCount, wishlistCount, onOpenCart, onOpenWis
                   {isLoggedIn ? (
                     <div>
                       <p className="text-[10px] uppercase tracking-widest text-gray-400 font-bold mb-1">Welcome Back</p>
-                      <p className="text-sm font-black text-green-900 truncate">{user?.email}</p>
+                      {/* FIXED: Displays Name in CAPS, falls back to email if name is missing */}
+                      <p className="text-sm font-black text-green-900 truncate uppercase">
+                        {user?.fullName || user?.email || "MEMBER"}
+                      </p>
                     </div>
                   ) : (
                     <div>
                       <p className="text-[10px] uppercase tracking-widest text-gray-400 font-bold mb-1">Member Access</p>
-                      <p className="text-sm font-black text-green-900">Join Jeevasurabi</p>
+                      <p className="text-sm font-black text-green-900 uppercase">Join Jeevasurabi</p>
                     </div>
                   )}
                 </div>
@@ -126,21 +129,21 @@ export default function Navbar({ cartCount, wishlistCount, onOpenCart, onOpenWis
                       <Link href="/profile" onClick={() => setShowProfileMenu(false)} className="flex items-center justify-between p-4 rounded-2xl hover:bg-green-50 transition-colors group">
                         <div className="flex items-center gap-3">
                           <UserCircle size={20} className="text-gray-400 group-hover:text-green-700" />
-                          <span className="text-sm font-bold text-gray-700">My Profile</span>
+                          <span className="text-sm font-bold text-gray-700 uppercase">My Profile</span>
                         </div>
                         <ChevronRight size={14} className="text-gray-300" />
                       </Link>
                       <Link href="/orders" onClick={() => setShowProfileMenu(false)} className="flex items-center justify-between p-4 rounded-2xl hover:bg-green-50 transition-colors group">
                         <div className="flex items-center gap-3">
                           <Package size={20} className="text-gray-400 group-hover:text-green-700" />
-                          <span className="text-sm font-bold text-gray-700">My Orders</span>
+                          <span className="text-sm font-bold text-gray-700 uppercase">My Orders</span>
                         </div>
                         <ChevronRight size={14} className="text-gray-300" />
                       </Link>
                       <Link href="/settings" onClick={() => setShowProfileMenu(false)} className="flex items-center justify-between p-4 rounded-2xl hover:bg-green-50 transition-colors group">
                         <div className="flex items-center gap-3">
                           <Settings size={20} className="text-gray-400 group-hover:text-green-700" />
-                          <span className="text-sm font-bold text-gray-700">Settings</span>
+                          <span className="text-sm font-bold text-gray-700 uppercase">Settings</span>
                         </div>
                         <ChevronRight size={14} className="text-gray-300" />
                       </Link>
@@ -150,7 +153,7 @@ export default function Navbar({ cartCount, wishlistCount, onOpenCart, onOpenWis
                         className="w-full flex items-center gap-3 p-4 rounded-2xl hover:bg-red-50 text-red-600 transition-colors"
                       >
                         <LogOut size={20} />
-                        <span className="text-sm font-bold">Sign Out</span>
+                        <span className="text-sm font-bold uppercase">Sign Out</span>
                       </button>
                     </>
                   ) : (
