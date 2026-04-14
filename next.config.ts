@@ -16,6 +16,11 @@ const nextConfig = {
         hostname: 'images.unsplash.com',
         pathname: '/**', // This allows all images from Unsplash
       },
+      {
+        protocol: 'https',
+        hostname: 'lh3.googleusercontent.com',
+        pathname: '/**', // This allows Google profile pictures
+      },
       // You can also add your future S3 bucket here:
       // {
       //   protocol: 'https',

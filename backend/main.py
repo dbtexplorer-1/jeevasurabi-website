@@ -12,12 +12,10 @@ import models
 import auth
 from database import engine, get_db
 
-# Create the database tables if they don't exist
 models.Base.metadata.create_all(bind=engine)
 
 app = FastAPI(title="JeevaSurabi E-commerce API")
 
-# Configure CORS
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["http://localhost:3000"],
@@ -36,10 +34,6 @@ def get_current_user(
     token: str = Depends(oauth2_scheme),
     db: Session = Depends(get_db)
 ) -> models.UserDB:
-    """
-    Decodes the Bearer JWT from Authorization header and returns the DB user.
-    Raises 401 if token is missing, invalid, or user not found.
-    """
     credentials_exception = HTTPException(
         status_code=status.HTTP_401_UNAUTHORIZED,
         detail="Could not validate credentials",
@@ -53,7 +47,6 @@ def get_current_user(
     except JWTError:
         raise credentials_exception
 
-    # subject can be email or phone_number depending on how the token was created
     user = db.query(models.UserDB).filter(
         (models.UserDB.email == subject) |
         (models.UserDB.phone_number == subject)
@@ -65,18 +58,32 @@ def get_current_user(
 
 
 # ==========================================
-# PYDANTIC SCHEMAS (request bodies for new endpoints)
+# PYDANTIC SCHEMAS
 # ==========================================
 
 class UpdateProfileRequest(BaseModel):
     full_name: Optional[str] = None
     email: Optional[str] = None
     phone_number: Optional[str] = None
-    profile_pic: Optional[str] = None   # base64 data-URL or a hosted URL
-
+    profile_pic: Optional[str] = None
 
 class ChangePasswordRequest(BaseModel):
     current_password: str
+    new_password: str
+
+class LoginOTPRequest(BaseModel):
+    phone_number: str
+
+class VerifyLoginOTPRequest(BaseModel):
+    phone_number: str
+    otp_code: str
+
+class ForgotPasswordSendOTPRequest(BaseModel):
+    phone_number: str
+
+class ForgotPasswordResetRequest(BaseModel):
+    phone_number: str
+    otp_code: str
     new_password: str
 
 
@@ -99,12 +106,11 @@ def get_products(db: Session = Depends(get_db)):
 
 
 # ==========================================
-# PROFILE ROUTES  (protected — require JWT)
+# PROFILE ROUTES (protected)
 # ==========================================
 
 @app.get("/me", response_model=models.UserResponse)
 def get_me(current_user: models.UserDB = Depends(get_current_user)):
-    """Return the currently logged-in user's profile data."""
     return current_user
 
 
@@ -114,32 +120,14 @@ def update_profile(
     current_user: models.UserDB = Depends(get_current_user),
     db: Session = Depends(get_db),
 ):
-    """
-    Update the current user's editable profile fields.
-    Only fields explicitly provided in the request body are updated.
-    """
-    # Check uniqueness constraints before applying changes
     if request.email and request.email != current_user.email:
-        existing = db.query(models.UserDB).filter(
-            models.UserDB.email == request.email
-        ).first()
-        if existing:
-            raise HTTPException(
-                status_code=status.HTTP_400_BAD_REQUEST,
-                detail="Email is already in use by another account",
-            )
+        if db.query(models.UserDB).filter(models.UserDB.email == request.email).first():
+            raise HTTPException(status_code=400, detail="Email is already in use by another account")
 
     if request.phone_number and request.phone_number != current_user.phone_number:
-        existing = db.query(models.UserDB).filter(
-            models.UserDB.phone_number == request.phone_number
-        ).first()
-        if existing:
-            raise HTTPException(
-                status_code=status.HTTP_400_BAD_REQUEST,
-                detail="Phone number is already in use by another account",
-            )
+        if db.query(models.UserDB).filter(models.UserDB.phone_number == request.phone_number).first():
+            raise HTTPException(status_code=400, detail="Phone number is already in use by another account")
 
-    # Apply updates — only overwrite fields that were actually sent
     if request.full_name is not None:
         current_user.full_name = request.full_name
     if request.email is not None:
@@ -160,31 +148,14 @@ def change_password(
     current_user: models.UserDB = Depends(get_current_user),
     db: Session = Depends(get_db),
 ):
-    """
-    Change the current user's password.
-    - Google-only accounts (no hashed_password) cannot use this endpoint.
-    - Verifies the current password before setting the new one.
-    """
-    # Google-only users have no password set
     if not current_user.hashed_password:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail="This account uses Google Sign-In and does not have a password",
-        )
+        raise HTTPException(status_code=400, detail="This account uses Google Sign-In and does not have a password")
 
-    # Verify the current password is correct
     if not auth.verify_password(request.current_password, current_user.hashed_password):
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail="Current password is incorrect",
-        )
+        raise HTTPException(status_code=400, detail="Current password is incorrect")
 
-    # Enforce a minimum length (same rule the frontend uses)
-    if len(request.new_password) < 6:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail="New password must be at least 6 characters",
-        )
+    if len(request.new_password) < 8:
+        raise HTTPException(status_code=400, detail="New password must be at least 8 characters")
 
     current_user.hashed_password = auth.get_password_hash(request.new_password)
     db.commit()
@@ -192,42 +163,41 @@ def change_password(
 
 
 # ==========================================
-# AUTHENTICATION: PHONE OTP ROUTES
+# AUTH — SIGN UP (new user: phone + OTP + password)
 # ==========================================
 
 @app.post("/send-otp", status_code=status.HTTP_200_OK)
 def send_otp(request: models.PhoneRequest, db: Session = Depends(get_db)):
-    # 1. Generate OTP
+    """Send OTP for SIGN-UP. Phone must NOT already be registered."""
+    existing_user = db.query(models.UserDB).filter(
+        models.UserDB.phone_number == request.phone_number
+    ).first()
+    if existing_user:
+        raise HTTPException(status_code=400, detail="Phone number is already registered. Please sign in instead.")
+
     otp_code = auth.generate_otp()
     expiration_time = datetime.now(timezone.utc) + timedelta(minutes=10)
 
-    # 2. Save/Update OTP in DB
     existing_otp = db.query(models.OTPVerificationDB).filter(
         models.OTPVerificationDB.phone_number == request.phone_number
     ).first()
-
     if existing_otp:
         existing_otp.otp_code = otp_code
         existing_otp.expires_at = expiration_time.replace(tzinfo=None)
     else:
-        new_otp = models.OTPVerificationDB(
+        db.add(models.OTPVerificationDB(
             phone_number=request.phone_number,
             otp_code=otp_code,
             expires_at=expiration_time.replace(tzinfo=None),
-        )
-        db.add(new_otp)
+        ))
 
     db.commit()
-
-    # 3. Send SMS (Terminal Mock — swap for Twilio/Fast2SMS in production)
     auth.send_sms_otp(request.phone_number, otp_code)
-
     return {"message": f"OTP sent to {request.phone_number}"}
 
 
 @app.post("/verify-otp-and-signup")
 def verify_otp_and_signup(request: models.VerifyOTPRequest, db: Session = Depends(get_db)):
-    # 1. Verify OTP
     otp_record = db.query(models.OTPVerificationDB).filter(
         models.OTPVerificationDB.phone_number == request.phone_number
     ).first()
@@ -238,14 +208,9 @@ def verify_otp_and_signup(request: models.VerifyOTPRequest, db: Session = Depend
     if datetime.now(timezone.utc).replace(tzinfo=None) > otp_record.expires_at:
         raise HTTPException(status_code=400, detail="OTP expired")
 
-    # 2. Ensure phone number isn't already registered
-    db_user = db.query(models.UserDB).filter(
-        models.UserDB.phone_number == request.phone_number
-    ).first()
-    if db_user:
+    if db.query(models.UserDB).filter(models.UserDB.phone_number == request.phone_number).first():
         raise HTTPException(status_code=400, detail="Phone number already registered")
 
-    # 3. Create User
     hashed_pw = auth.get_password_hash(request.password) if request.password else None
     new_user = models.UserDB(
         phone_number=request.phone_number,
@@ -257,67 +222,148 @@ def verify_otp_and_signup(request: models.VerifyOTPRequest, db: Session = Depend
     db.commit()
     db.refresh(new_user)
 
-    # 4. Auto-login: return token immediately
     access_token = auth.create_access_token(data={"sub": new_user.phone_number})
-
-    return {
-        "access_token": access_token,
-        "token_type": "bearer",
-        "full_name": new_user.full_name,
-    }
+    return {"access_token": access_token, "token_type": "bearer", "full_name": new_user.full_name}
 
 
 # ==========================================
-# AUTHENTICATION: GOOGLE LOGIN
+# AUTH — SIGN IN WITH OTP (existing user)
 # ==========================================
 
-@app.post("/google-login")
-def google_login(request: models.GoogleLoginRequest, db: Session = Depends(get_db)):
-    # 1. Verify the Google Token
-    google_data = auth.verify_google_token(request.token)
-    if not google_data:
-        raise HTTPException(status_code=400, detail="Invalid Google token")
+@app.post("/send-login-otp", status_code=status.HTTP_200_OK)
+def send_login_otp(request: LoginOTPRequest, db: Session = Depends(get_db)):
+    """Send OTP for LOGIN. Phone MUST already be registered."""
+    existing_user = db.query(models.UserDB).filter(
+        models.UserDB.phone_number == request.phone_number
+    ).first()
+    if not existing_user:
+        raise HTTPException(status_code=404, detail="No account found with this phone number. Please sign up first.")
 
-    email = google_data["email"]
-    google_id = google_data["sub"]
-    name = google_data.get("name")
-    picture = google_data.get("picture")
+    otp_code = auth.generate_otp()
+    expiration_time = datetime.now(timezone.utc) + timedelta(minutes=10)
 
-    # 2. Find or create the user
+    existing_otp = db.query(models.OTPVerificationDB).filter(
+        models.OTPVerificationDB.phone_number == request.phone_number
+    ).first()
+    if existing_otp:
+        existing_otp.otp_code = otp_code
+        existing_otp.expires_at = expiration_time.replace(tzinfo=None)
+    else:
+        db.add(models.OTPVerificationDB(
+            phone_number=request.phone_number,
+            otp_code=otp_code,
+            expires_at=expiration_time.replace(tzinfo=None),
+        ))
+
+    db.commit()
+    auth.send_sms_otp(request.phone_number, otp_code)
+    return {"message": f"OTP sent to {request.phone_number}"}
+
+
+@app.post("/verify-login-otp")
+def verify_login_otp(request: VerifyLoginOTPRequest, db: Session = Depends(get_db)):
+    otp_record = db.query(models.OTPVerificationDB).filter(
+        models.OTPVerificationDB.phone_number == request.phone_number
+    ).first()
+
+    if not otp_record or otp_record.otp_code != request.otp_code:
+        raise HTTPException(status_code=400, detail="Invalid OTP")
+
+    if datetime.now(timezone.utc).replace(tzinfo=None) > otp_record.expires_at:
+        raise HTTPException(status_code=400, detail="OTP expired")
+
     user = db.query(models.UserDB).filter(
-        (models.UserDB.google_id == google_id) | (models.UserDB.email == email)
+        models.UserDB.phone_number == request.phone_number
+    ).first()
+    if not user:
+        raise HTTPException(status_code=404, detail="User not found")
+
+    db.delete(otp_record)
+    db.commit()
+
+    access_token = auth.create_access_token(data={"sub": user.phone_number})
+    return {"access_token": access_token, "token_type": "bearer", "full_name": user.full_name}
+
+
+# ==========================================
+# AUTH — FORGOT PASSWORD (no auth required)
+# ==========================================
+
+@app.post("/forgot-password/send-otp", status_code=status.HTTP_200_OK)
+def forgot_password_send_otp(request: ForgotPasswordSendOTPRequest, db: Session = Depends(get_db)):
+    """
+    Step 1: User provides their phone number.
+    - Must be a registered phone account (not Google-only).
+    - Sends an OTP to verify identity before allowing password reset.
+    """
+    user = db.query(models.UserDB).filter(
+        models.UserDB.phone_number == request.phone_number
     ).first()
 
     if not user:
-        user = models.UserDB(
-            email=email,
-            google_id=google_id,
-            full_name=name,
-            profile_pic=picture,
-            is_active=True,
+        raise HTTPException(status_code=404, detail="No account found with this phone number.")
+
+    if not user.hashed_password and user.google_id:
+        raise HTTPException(
+            status_code=400,
+            detail="This account uses Google Sign-In. Password reset is not available."
         )
-        db.add(user)
+
+    otp_code = auth.generate_otp()
+    expiration_time = datetime.now(timezone.utc) + timedelta(minutes=10)
+
+    existing_otp = db.query(models.OTPVerificationDB).filter(
+        models.OTPVerificationDB.phone_number == request.phone_number
+    ).first()
+    if existing_otp:
+        existing_otp.otp_code = otp_code
+        existing_otp.expires_at = expiration_time.replace(tzinfo=None)
     else:
-        # Keep Google profile data in sync
-        user.google_id = google_id
-        user.profile_pic = picture
-        user.full_name = name
+        db.add(models.OTPVerificationDB(
+            phone_number=request.phone_number,
+            otp_code=otp_code,
+            expires_at=expiration_time.replace(tzinfo=None),
+        ))
 
     db.commit()
-    db.refresh(user)
+    auth.send_sms_otp(request.phone_number, otp_code)
+    return {"message": f"OTP sent to {request.phone_number}"}
 
-    # 3. Create JWT
-    access_token = auth.create_access_token(data={"sub": user.email or user.phone_number})
 
-    return {
-        "access_token": access_token,
-        "token_type": "bearer",
-        "full_name": user.full_name,
-    }
+@app.post("/forgot-password/reset", status_code=status.HTTP_200_OK)
+def forgot_password_reset(request: ForgotPasswordResetRequest, db: Session = Depends(get_db)):
+    """
+    Step 2: Verify OTP and set a new password.
+    - No JWT required — identity is proven by OTP.
+    """
+    otp_record = db.query(models.OTPVerificationDB).filter(
+        models.OTPVerificationDB.phone_number == request.phone_number
+    ).first()
+
+    if not otp_record or otp_record.otp_code != request.otp_code:
+        raise HTTPException(status_code=400, detail="Invalid OTP")
+
+    if datetime.now(timezone.utc).replace(tzinfo=None) > otp_record.expires_at:
+        raise HTTPException(status_code=400, detail="OTP expired")
+
+    if len(request.new_password) < 8:
+        raise HTTPException(status_code=400, detail="Password must be at least 8 characters")
+
+    user = db.query(models.UserDB).filter(
+        models.UserDB.phone_number == request.phone_number
+    ).first()
+    if not user:
+        raise HTTPException(status_code=404, detail="User not found")
+
+    user.hashed_password = auth.get_password_hash(request.new_password)
+    db.delete(otp_record)
+    db.commit()
+
+    return {"message": "Password reset successfully. You can now sign in with your new password."}
 
 
 # ==========================================
-# AUTHENTICATION: STANDARD LOGIN
+# AUTH — SIGN IN WITH PASSWORD
 # ==========================================
 
 @app.post("/login")
@@ -330,9 +376,7 @@ def login_for_access_token(
         (models.UserDB.email == form_data.username)
     ).first()
 
-    if not user or not user.hashed_password or not auth.verify_password(
-        form_data.password, user.hashed_password
-    ):
+    if not user or not user.hashed_password or not auth.verify_password(form_data.password, user.hashed_password):
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Incorrect phone/email or password",
@@ -340,9 +384,38 @@ def login_for_access_token(
         )
 
     access_token = auth.create_access_token(data={"sub": form_data.username})
+    return {"access_token": access_token, "token_type": "bearer", "full_name": user.full_name}
 
-    return {
-        "access_token": access_token,
-        "token_type": "bearer",
-        "full_name": user.full_name,
-    }
+
+# ==========================================
+# AUTH — GOOGLE LOGIN
+# ==========================================
+
+@app.post("/google-login")
+def google_login(request: models.GoogleLoginRequest, db: Session = Depends(get_db)):
+    google_data = auth.verify_google_token(request.token)
+    if not google_data:
+        raise HTTPException(status_code=400, detail="Invalid Google token")
+
+    email = google_data["email"]
+    google_id = google_data["sub"]
+    name = google_data.get("name")
+    picture = google_data.get("picture")
+
+    user = db.query(models.UserDB).filter(
+        (models.UserDB.google_id == google_id) | (models.UserDB.email == email)
+    ).first()
+
+    if not user:
+        user = models.UserDB(email=email, google_id=google_id, full_name=name, profile_pic=picture, is_active=True)
+        db.add(user)
+    else:
+        user.google_id = google_id
+        user.profile_pic = picture
+        user.full_name = name
+
+    db.commit()
+    db.refresh(user)
+
+    access_token = auth.create_access_token(data={"sub": user.email or user.phone_number})
+    return {"access_token": access_token, "token_type": "bearer", "full_name": user.full_name}

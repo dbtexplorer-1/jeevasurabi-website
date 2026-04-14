@@ -2,17 +2,23 @@
 import React, { createContext, useContext, useState, useEffect } from "react";
 import { useRouter } from "next/navigation";
 
+export type AuthMethod = "google" | "phone" | null;
+
 interface User {
   email: string;
   fullName?: string;
   phone?: string;
   profilePic?: string;
+  authMethod?: AuthMethod;
 }
 
 interface AuthContextType {
   user: User | null;
   isLoggedIn: boolean;
-  login: (token: string, identifier: string) => void;
+  authMethod: AuthMethod;
+  isGoogleUser: boolean;
+  isPhoneUser: boolean;
+  login: (token: string, identifier: string, method?: AuthMethod) => void;
   logout: () => void;
   updateUser: (updates: Partial<User>) => void;
   loading: boolean;
@@ -38,11 +44,12 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
     setLoading(false);
   }, []);
 
-  const login = (token: string, identifier: string) => {
+  const login = (token: string, identifier: string, method: AuthMethod = "phone") => {
     const userData: User = {
       email: identifier.includes("@") ? identifier : "",
       fullName: identifier.includes("@") ? "" : identifier,
       phone: identifier.includes("@") ? "" : identifier,
+      authMethod: method,
     };
     localStorage.setItem("token", token);
     localStorage.setItem("userData", JSON.stringify(userData));
@@ -68,9 +75,21 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
     });
   };
 
+  const authMethod: AuthMethod = user?.authMethod ?? null;
+
   return (
     <AuthContext.Provider
-      value={{ user, isLoggedIn: !!user, login, logout, updateUser, loading }}
+      value={{
+        user,
+        isLoggedIn: !!user,
+        authMethod,
+        isGoogleUser: authMethod === "google",
+        isPhoneUser: authMethod === "phone",
+        login,
+        logout,
+        updateUser,
+        loading,
+      }}
     >
       {children}
     </AuthContext.Provider>
