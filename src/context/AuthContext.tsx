@@ -18,7 +18,8 @@ interface AuthContextType {
   authMethod: AuthMethod;
   isGoogleUser: boolean;
   isPhoneUser: boolean;
-  login: (token: string, identifier: string, method?: AuthMethod) => void;
+  // ADDED: profilePic to the login function signature
+  login: (token: string, identifier: string, method?: AuthMethod, profilePic?: string) => void;
   logout: () => void;
   updateUser: (updates: Partial<User>) => void;
   loading: boolean;
@@ -44,18 +45,27 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
     setLoading(false);
   }, []);
 
-  const login = (token: string, identifier: string, method: AuthMethod = "phone") => {
+  // ADDED: Accept profilePic here
+  const login = (token: string, identifier: string, method: AuthMethod = "phone", profilePic?: string) => {
     const userData: User = {
       email: identifier.includes("@") ? identifier : "",
       fullName: identifier.includes("@") ? "" : identifier,
       phone: identifier.includes("@") ? "" : identifier,
+      profilePic: profilePic || "", // ADDED: Store it immediately
       authMethod: method,
     };
     localStorage.setItem("token", token);
     localStorage.setItem("userData", JSON.stringify(userData));
     localStorage.setItem("userEmail", identifier); // backward compat
     setUser(userData);
-    router.push("/shop");
+
+    const redirectUrl = localStorage.getItem('redirectAfterLogin');
+    if (redirectUrl) {
+        localStorage.removeItem('redirectAfterLogin'); 
+        router.push(redirectUrl);
+    } else {
+        router.push("/shop"); 
+    }
   };
 
   const logout = () => {

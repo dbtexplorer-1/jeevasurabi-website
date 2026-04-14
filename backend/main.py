@@ -18,7 +18,8 @@ app = FastAPI(title="JeevaSurabi E-commerce API")
 
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["http://localhost:3000"],
+    # Add your specific IP here (e.g., "http://192.168.1.15:3000")
+    allow_origins=["http://localhost:3000", "http://192.168.0.101:3000"], 
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
@@ -80,6 +81,11 @@ class VerifyLoginOTPRequest(BaseModel):
 
 class ForgotPasswordSendOTPRequest(BaseModel):
     phone_number: str
+
+# NEW: Schema for verifying OTP before resetting password
+class ForgotPasswordVerifyOTPRequest(BaseModel):
+    phone_number: str
+    otp_code: str
 
 class ForgotPasswordResetRequest(BaseModel):
     phone_number: str
@@ -223,7 +229,7 @@ def verify_otp_and_signup(request: models.VerifyOTPRequest, db: Session = Depend
     db.refresh(new_user)
 
     access_token = auth.create_access_token(data={"sub": new_user.phone_number})
-    return {"access_token": access_token, "token_type": "bearer", "full_name": new_user.full_name}
+    return {"access_token": access_token, "token_type": "bearer", "full_name": new_user.full_name, "profile_pic": new_user.profile_pic}
 
 
 # ==========================================
@@ -282,7 +288,7 @@ def verify_login_otp(request: VerifyLoginOTPRequest, db: Session = Depends(get_d
     db.commit()
 
     access_token = auth.create_access_token(data={"sub": user.phone_number})
-    return {"access_token": access_token, "token_type": "bearer", "full_name": user.full_name}
+    return {"access_token": access_token, "token_type": "bearer", "full_name": user.full_name, "profile_pic": user.profile_pic}
 
 
 # ==========================================
@@ -293,8 +299,6 @@ def verify_login_otp(request: VerifyLoginOTPRequest, db: Session = Depends(get_d
 def forgot_password_send_otp(request: ForgotPasswordSendOTPRequest, db: Session = Depends(get_db)):
     """
     Step 1: User provides their phone number.
-    - Must be a registered phone account (not Google-only).
-    - Sends an OTP to verify identity before allowing password reset.
     """
     user = db.query(models.UserDB).filter(
         models.UserDB.phone_number == request.phone_number
@@ -330,11 +334,30 @@ def forgot_password_send_otp(request: ForgotPasswordSendOTPRequest, db: Session 
     return {"message": f"OTP sent to {request.phone_number}"}
 
 
+# NEW ENDPOINT: Verify OTP before resetting password
+@app.post("/forgot-password/verify-otp", status_code=status.HTTP_200_OK)
+def forgot_password_verify_otp(request: ForgotPasswordVerifyOTPRequest, db: Session = Depends(get_db)):
+    """
+    Step 1.5: Verify the OTP is correct before allowing them to enter a new password.
+    Does NOT delete the OTP record yet.
+    """
+    otp_record = db.query(models.OTPVerificationDB).filter(
+        models.OTPVerificationDB.phone_number == request.phone_number
+    ).first()
+
+    if not otp_record or otp_record.otp_code != request.otp_code:
+        raise HTTPException(status_code=400, detail="Invalid OTP")
+
+    if datetime.now(timezone.utc).replace(tzinfo=None) > otp_record.expires_at:
+        raise HTTPException(status_code=400, detail="OTP expired")
+
+    return {"message": "OTP verified"}
+
+
 @app.post("/forgot-password/reset", status_code=status.HTTP_200_OK)
 def forgot_password_reset(request: ForgotPasswordResetRequest, db: Session = Depends(get_db)):
     """
     Step 2: Verify OTP and set a new password.
-    - No JWT required — identity is proven by OTP.
     """
     otp_record = db.query(models.OTPVerificationDB).filter(
         models.OTPVerificationDB.phone_number == request.phone_number
@@ -384,7 +407,7 @@ def login_for_access_token(
         )
 
     access_token = auth.create_access_token(data={"sub": form_data.username})
-    return {"access_token": access_token, "token_type": "bearer", "full_name": user.full_name}
+    return {"access_token": access_token, "token_type": "bearer", "full_name": user.full_name, "profile_pic": user.profile_pic}
 
 
 # ==========================================
@@ -418,4 +441,4 @@ def google_login(request: models.GoogleLoginRequest, db: Session = Depends(get_d
     db.refresh(user)
 
     access_token = auth.create_access_token(data={"sub": user.email or user.phone_number})
-    return {"access_token": access_token, "token_type": "bearer", "full_name": user.full_name}
+    return {"access_token": access_token, "token_type": "bearer", "full_name": user.full_name, "profile_pic": user.profile_pic}

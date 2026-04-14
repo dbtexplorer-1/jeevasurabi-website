@@ -4,21 +4,25 @@ import Navbar from "@/components/Navbar";
 import Footer from "@/components/Footer";
 import { useCart } from "@/context/CartContext";
 import { useWishlist } from "@/context/WishlistContext";
+import { useAuth } from "@/context/AuthContext";
 import { User, X, LogIn, Package, Settings, ShoppingCart, Trash2, Plus, Minus, Heart } from 'lucide-react';
 import Link from 'next/link';
 import Image from 'next/image';
-import { usePathname } from 'next/navigation';
+import { usePathname, useRouter } from 'next/navigation';
 
 export default function LayoutContent({ children }: { children: React.ReactNode }) {
   const { cart, cartCount, totalPrice, updateQuantity, removeFromCart, addToCart } = useCart();
   const { wishlist, wishlistCount, toggleWishlist } = useWishlist();
+  const { isLoggedIn } = useAuth();
   const [isCartOpen, setIsCartOpen] = useState(false);
   const [isWishlistOpen, setIsWishlistOpen] = useState(false);
   const [isProfileOpen, setIsProfileOpen] = useState(false);
   const [toast, setToast] = useState<string | null>(null);
+  
   const pathname = usePathname();
+  const router = useRouter();
 
-  const shouldHideHeaderFooter = pathname.startsWith('/admin') || pathname === '/login';
+  const shouldHideHeaderFooter = pathname.startsWith('/admin') || pathname === '/login' || pathname === '/checkout';
 
   useEffect(() => {
     let timeoutId: NodeJS.Timeout;
@@ -34,6 +38,17 @@ export default function LayoutContent({ children }: { children: React.ReactNode 
       clearTimeout(timeoutId);
     };
   }, []);
+
+  const handleProceedToCheckout = () => {
+    setIsCartOpen(false);
+    
+    if (isLoggedIn) {
+      router.push('/checkout');
+    } else {
+      localStorage.setItem('redirectAfterLogin', '/checkout');
+      router.push('/login');
+    }
+  };
 
   return (
     <>
@@ -82,11 +97,28 @@ export default function LayoutContent({ children }: { children: React.ReactNode 
                       <h4 className="font-serif text-base text-green-900 font-bold">{item.name}</h4>
                       <p className="text-xs text-amber-700 font-bold uppercase">{item.size}</p>
                       <div className="flex items-center justify-between mt-2">
-                        <div className="flex items-center border rounded-lg">
-                          <button onClick={() => updateQuantity(item.id, -1)} className="p-1"><Minus size={14}/></button>
-                          <span className="px-3 font-bold text-base">{item.quantity}</span>
-                          <button onClick={() => updateQuantity(item.id, 1)} className="p-1"><Plus size={14}/></button>
+                        
+                        {/* HIGH CONTRAST QUANTITY SELECTOR */}
+                        <div className="flex items-center border-2 border-gray-200 rounded-lg overflow-hidden bg-white shadow-sm">
+                          <button 
+                            onClick={() => updateQuantity(item.id, -1)} 
+                            className="p-2 text-gray-600 hover:text-green-900 hover:bg-green-50 active:bg-green-100 transition-colors"
+                          >
+                            <Minus size={14} strokeWidth={3} />
+                          </button>
+                          
+                          <span className="w-10 text-center font-black text-gray-900 text-sm">
+                            {item.quantity}
+                          </span>
+                          
+                          <button 
+                            onClick={() => updateQuantity(item.id, 1)} 
+                            className="p-2 text-gray-600 hover:text-green-900 hover:bg-green-50 active:bg-green-100 transition-colors"
+                          >
+                            <Plus size={14} strokeWidth={3} />
+                          </button>
                         </div>
+                        
                         <span className="font-bold text-lg text-green-900">₹{item.price * item.quantity}</span>
                         <button onClick={() => removeFromCart(item.id)} className="text-gray-300 hover:text-red-600"><Trash2 size={18}/></button>
                       </div>
@@ -102,7 +134,10 @@ export default function LayoutContent({ children }: { children: React.ReactNode 
                   <span>Total</span>
                   <span className="text-green-900">₹{totalPrice}</span>
                 </div>
-                <button className="w-full bg-green-900 text-white py-4 rounded-xl font-bold uppercase tracking-widest hover:bg-green-800 transition-all">
+                <button 
+                  onClick={handleProceedToCheckout}
+                  className="w-full bg-green-900 text-white py-4 rounded-xl font-bold uppercase tracking-widest hover:bg-green-800 transition-all"
+                >
                   Proceed to Checkout
                 </button>
               </div>

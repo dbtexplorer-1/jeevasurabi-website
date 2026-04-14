@@ -1,3 +1,4 @@
+// cartcontext
 "use client";
 import React, { createContext, useContext, useState } from 'react';
 
@@ -15,6 +16,7 @@ interface CartContextType {
   addToCart: (product: any) => void;
   removeFromCart: (id: number) => void;
   updateQuantity: (id: number, delta: number) => void;
+  clearCart: () => void; // NEW: Added this for after successful payment
   totalPrice: number;
   cartCount: number;
 }
@@ -49,11 +51,13 @@ export function CartProvider({ children }: { children: React.ReactNode }) {
     );
   };
 
+  const clearCart = () => setCart([]); // Empties the cart when called
+
   const totalPrice = cart.reduce((acc, item) => acc + item.price * item.quantity, 0);
   const cartCount = cart.reduce((acc, item) => acc + item.quantity, 0);
 
   return (
-    <CartContext.Provider value={{ cart, addToCart, removeFromCart, updateQuantity, totalPrice, cartCount }}>
+    <CartContext.Provider value={{ cart, addToCart, removeFromCart, updateQuantity, clearCart, totalPrice, cartCount }}>
       {children}
     </CartContext.Provider>
   );

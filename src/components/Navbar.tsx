@@ -1,3 +1,4 @@
+// NavBar
 "use client";
 import React, { useState, useEffect, useRef } from 'react';
 import Link from 'next/link';
@@ -13,7 +14,7 @@ interface NavbarProps {
   cartCount: number;
   wishlistCount: number;
   onOpenCart: () => void;
-  onOpenProfile: () => void; // Keeping for props compatibility
+  onOpenProfile: () => void;
   onOpenWishlist: () => void;
 }
 
@@ -25,7 +26,6 @@ export default function Navbar({ cartCount, wishlistCount, onOpenCart, onOpenWis
   
   const { isLoggedIn, user, logout } = useAuth();
 
-  // Close dropdown when clicking outside
   useEffect(() => {
     function handleClickOutside(event: MouseEvent) {
       if (menuRef.current && !menuRef.current.contains(event.target as Node)) {
@@ -44,11 +44,21 @@ export default function Navbar({ cartCount, wishlistCount, onOpenCart, onOpenWis
   const mobileActiveStyles = (path: string) =>
     pathname === path ? "text-green-900 font-black" : "text-gray-700";
 
+  // Helper function to get initials for the avatar fallback
+  const getInitials = () => {
+    const name = user?.fullName || user?.email || "MEMBER";
+    return name
+      .split(" ")
+      .map((w: string) => w[0])
+      .join("")
+      .toUpperCase()
+      .slice(0, 2);
+  };
+
   return (
     <nav className="bg-green-900 shadow-sm sticky top-0 z-40 w-full transition-all">
       <div className="flex justify-between items-center px-6 md:px-12 py-4 md:py-6">
         
-        {/* MOBILE MENU TOGGLE */}
         <button 
           className="lg:hidden text-white hover:text-green-200 transition-colors"
           onClick={() => setIsMenuOpen(!isMenuOpen)}
@@ -56,14 +66,12 @@ export default function Navbar({ cartCount, wishlistCount, onOpenCart, onOpenWis
           {isMenuOpen ? <X size={28} /> : <Menu size={28} />}
         </button>
 
-        {/* BRAND LOGO */}
         <div className="flex items-center">
           <Link href="/">
             <Image src="/icon.png" alt="Jeevasurabi Logo" width={120} height={40} className="object-contain h-8 md:h-10 w-auto" priority />
           </Link>
         </div>
 
-        {/* DESKTOP NAV LINKS */}
         <div className="hidden lg:flex space-x-12 font-bold uppercase text-sm tracking-[0.2em]">
           <Link href="/" className={activeStyles('/')}>Home</Link>
           <Link href="/shop" className={activeStyles('/shop')}>Shop</Link>
@@ -71,7 +79,6 @@ export default function Navbar({ cartCount, wishlistCount, onOpenCart, onOpenWis
           <Link href="/contact" className={activeStyles('/contact')}>Contact us</Link>
         </div>
 
-        {/* ACTIONS */}
         <div className="flex items-center space-x-4 md:space-x-8 text-white relative">
           <button onClick={onOpenWishlist} className="relative hover:text-green-200 transition-transform hover:scale-110">
             <Heart className="w-6 h-6 md:w-8 md:h-8" strokeWidth={1.5} />
@@ -91,25 +98,36 @@ export default function Navbar({ cartCount, wishlistCount, onOpenCart, onOpenWis
             )}
           </button>
 
-          {/* PROFILE DROPDOWN TRIGGER */}
           <div className="relative" ref={menuRef}>
             <button 
               onClick={() => setShowProfileMenu(!showProfileMenu)}
               className={`flex items-center gap-2 p-1 rounded-full transition-all ${showProfileMenu ? 'bg-white text-green-900 scale-110' : 'hover:text-green-200 hover:scale-110'}`}
             >
-              <User className="w-6 h-6 md:w-8 md:h-8" strokeWidth={1.5} />
+              {isLoggedIn ? (
+                user?.profilePic ? (
+                  <img 
+                    src={user.profilePic} 
+                    alt="Profile" 
+                    referrerPolicy="no-referrer"
+                    className="w-6 h-6 md:w-8 md:h-8 rounded-full object-cover border-2 border-white/50" 
+                  />
+                ) : (
+                  // FIXED: Show initials in a green circle if logged in but no photo
+                  <div className="w-6 h-6 md:w-8 md:h-8 rounded-full bg-white text-green-900 flex items-center justify-center font-black text-xs md:text-sm border-2 border-white/50">
+                    {getInitials()}
+                  </div>
+                )
+              ) : (
+                <User className="w-6 h-6 md:w-8 md:h-8" strokeWidth={1.5} />
+              )}
             </button>
 
-            {/* THE DROPDOWN MODAL */}
             {showProfileMenu && (
               <div className="absolute right-0 mt-4 w-72 bg-white rounded-[2rem] shadow-2xl border border-gray-100 overflow-hidden animate-in fade-in zoom-in-95 duration-200 text-gray-900">
-                
-                {/* Header section */}
                 <div className="p-6 bg-gray-50 border-b border-gray-100">
                   {isLoggedIn ? (
                     <div>
                       <p className="text-[10px] uppercase tracking-widest text-gray-400 font-bold mb-1">Welcome Back</p>
-                      {/* FIXED: Displays Name in CAPS, falls back to email if name is missing */}
                       <p className="text-sm font-black text-green-900 truncate uppercase">
                         {user?.fullName || user?.email || "MEMBER"}
                       </p>
@@ -122,7 +140,6 @@ export default function Navbar({ cartCount, wishlistCount, onOpenCart, onOpenWis
                   )}
                 </div>
 
-                {/* Menu items */}
                 <div className="p-4 space-y-1">
                   {isLoggedIn ? (
                     <>
@@ -176,7 +193,6 @@ export default function Navbar({ cartCount, wishlistCount, onOpenCart, onOpenWis
         </div>
       </div>
 
-      {/* MOBILE NAV OVERLAY */}
       {isMenuOpen && (
         <div className="lg:hidden bg-white border-t border-gray-100 p-8 flex flex-col space-y-8 font-bold text-gray-700 uppercase text-sm tracking-[0.25em] animate-in slide-in-from-top duration-300 shadow-xl">
           <Link href="/" onClick={() => setIsMenuOpen(false)} className={mobileActiveStyles('/')}>Home</Link>

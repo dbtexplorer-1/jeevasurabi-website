@@ -1,3 +1,4 @@
+// profile
 "use client";
 import React, { useState, useRef, useEffect } from "react";
 import { useRouter } from "next/navigation";
@@ -15,7 +16,7 @@ type SecurityView = "main" | "forgot-phone" | "forgot-otp" | "forgot-newpassword
 
 interface Toast { message: string; type: "success" | "error"; }
 
-const API_BASE = "http://localhost:8000";
+const API_BASE = "http://192.168.0.101:8000";
 
 export default function ProfilePage() {
   const { user, isLoggedIn, loading, logout, updateUser, isGoogleUser, isPhoneUser } = useAuth();
@@ -94,11 +95,13 @@ export default function ProfilePage() {
       const res = await fetch(`${API_BASE}/profile`, {
         method: "PUT",
         headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
+        // Do not convert the Base64 image string to uppercase, only the name.
         body: JSON.stringify({ full_name: fullName.toUpperCase(), email, phone_number: phone, profile_pic: avatarPreview }),
       });
       if (res.ok) {
         const d = await res.json();
         updateUser({ fullName: d.full_name, email: d.email, phone: d.phone_number, profilePic: d.profile_pic });
+        setAvatarPreview(d.profile_pic); // Ensure the preview stays in sync with backend
         setEditingProfile(false);
         showToast("Profile updated successfully!", "success");
       } else showToast("Failed to update profile", "error");
@@ -109,7 +112,7 @@ export default function ProfilePage() {
   const handleChangePassword = async (e: React.FormEvent) => {
     e.preventDefault();
     const passwordRegex = /^(?=.*[A-Za-z])(?=.*\d).{8,16}$/;
-    if (!passwordRegex.test(newPassword)) { showToast("Password must be 8-16 characters with at least one letter and one number", "error"); return; }
+    if (!passwordRegex.test(newPassword)) { showToast("Password must be 8-16 chars with a letter and a number", "error"); return; }
     if (newPassword !== confirmPassword) { showToast("Passwords do not match", "error"); return; }
     setSavingPassword(true);
     try {
@@ -143,16 +146,34 @@ export default function ProfilePage() {
     finally { setFpLoading(false); }
   };
 
-  const handleFpVerifyOtp = (e: React.FormEvent) => {
+  // FIX: Make a real API call to verify the OTP before showing the password screen
+  const handleFpVerifyOtp = async (e: React.FormEvent) => {
     e.preventDefault();
     if (fpOtp.length !== 6) { setFpError("Enter the 6-digit code"); return; }
-    setFpError(""); fpGoTo("forgot-newpassword");
+    
+    setFpLoading(true); setFpError("");
+    try {
+      const res = await fetch(`${API_BASE}/forgot-password/verify-otp`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ phone_number: fpPhone, otp_code: fpOtp }),
+      });
+      const data = await res.json();
+      
+      if (res.ok) {
+        setFpError(""); 
+        fpGoTo("forgot-newpassword");
+      } else {
+        setFpError(data.detail || "Invalid OTP");
+      }
+    } catch { setFpError("Could not reach server. Try again."); }
+    finally { setFpLoading(false); }
   };
 
   const handleFpReset = async (e: React.FormEvent) => {
     e.preventDefault();
     const passwordRegex = /^(?=.*[A-Za-z])(?=.*\d).{8,16}$/;
-    if (!passwordRegex.test(fpPassword)) { setFpError("Password must be 8-16 characters with at least one letter and one number"); return; }
+    if (!passwordRegex.test(fpPassword)) { setFpError("Password must be 8-16 chars with a letter and a number"); return; }
     setFpLoading(true); setFpError("");
     try {
       const res = await fetch(`${API_BASE}/forgot-password/reset`, {
@@ -189,6 +210,7 @@ export default function ProfilePage() {
     return { label: "Strong", color: "bg-green-600", width: "100%" };
   };
   const pwStrength = passwordStrength(newPassword);
+  const fpPwStrength = passwordStrength(fpPassword);
 
   if (loading) return (
     <div className="min-h-screen flex items-center justify-center bg-[#fafaf9]">
@@ -197,134 +219,12 @@ export default function ProfilePage() {
   );
   if (!isLoggedIn) return null;
 
-  const tabs: { id: Tab; label: string; icon: React.ReactNode }[] = [
-    { id: "profile", label: "My Profile", icon: <User size={18} /> },
+  const tabs = [
+    { id: "profile" as Tab, label: "My Profile", icon: <User size={18} /> },
     ...(!isGoogleUser ? [{ id: "security" as Tab, label: "Security", icon: <Shield size={18} /> }] : []),
-    { id: "orders", label: "Orders", icon: <Package size={18} /> },
-    { id: "preferences", label: "Preferences", icon: <Bell size={18} /> },
+    { id: "orders" as Tab, label: "Orders", icon: <Package size={18} /> },
+    { id: "preferences" as Tab, label: "Preferences", icon: <Bell size={18} /> },
   ];
-
-  const FpError = () => fpError ? (
-    <div className="flex items-start gap-2 bg-red-50 border border-red-100 text-red-700 text-xs font-bold px-4 py-3 rounded-xl">
-      <X size={14} className="shrink-0 mt-0.5" />{fpError}
-    </div>
-  ) : null;
-
-  const FpSubmitBtn = ({ label }: { label: string }) => (
-    <button disabled={fpLoading} className="flex items-center gap-2 px-8 py-3.5 bg-amber-600 text-white rounded-xl font-bold text-sm hover:bg-amber-700 uppercase tracking-widest disabled:opacity-60 transition-colors">
-      {fpLoading ? <Loader2 size={16} className="animate-spin" /> : <RotateCcw size={16} />} {label}
-    </button>
-  );
-
-  const ForgotPasswordSection = () => {
-    if (secView === "forgot-phone") return (
-      <div className="bg-amber-50 border border-amber-100 rounded-3xl overflow-hidden">
-        <div className="p-6 border-b border-amber-100 flex items-center gap-3">
-          <button onClick={() => fpGoTo("main")} className="text-amber-700 hover:text-amber-900 transition-colors"><ArrowLeft size={18} /></button>
-          <div>
-            <h3 className="font-bold text-gray-900">Reset Password</h3>
-            <p className="text-gray-500 text-xs mt-0.5">We'll send a code to verify your identity</p>
-          </div>
-        </div>
-        <form onSubmit={handleFpSendOtp} className="p-6 space-y-4">
-          <div>
-            <label className="block text-xs font-bold text-gray-500 uppercase tracking-wider mb-2">Phone Number</label>
-            <div className="relative">
-              <Phone size={16} className="absolute left-4 top-1/2 -translate-y-1/2 text-gray-400" />
-              <input type="tel" value={fpPhone} onChange={(e) => setFpPhone(e.target.value)} required
-                className="w-full pl-10 pr-4 py-3.5 border-2 border-amber-200 rounded-xl focus:border-amber-500 outline-none font-bold text-gray-900 bg-white" placeholder="+91 00000 00000" />
-            </div>
-          </div>
-          <FpError />
-          <FpSubmitBtn label="Send OTP" />
-        </form>
-      </div>
-    );
-
-    if (secView === "forgot-otp") return (
-      <div className="bg-amber-50 border border-amber-100 rounded-3xl overflow-hidden">
-        <div className="p-6 border-b border-amber-100 flex items-center gap-3">
-          <button onClick={() => fpGoTo("forgot-phone")} className="text-amber-700 hover:text-amber-900 transition-colors"><ArrowLeft size={18} /></button>
-          <div>
-            <h3 className="font-bold text-gray-900">Verify Identity</h3>
-            <p className="text-gray-500 text-xs mt-0.5">Code sent to <span className="font-bold">{fpPhone}</span></p>
-          </div>
-        </div>
-        <form onSubmit={handleFpVerifyOtp} className="p-6 space-y-4">
-          <input required type="text" inputMode="numeric" maxLength={6}
-            value={fpOtp} onChange={(e) => setFpOtp(e.target.value.replace(/\D/g, ""))} placeholder="000000"
-            className="w-full py-4 border-2 border-amber-200 rounded-xl outline-none focus:border-amber-500 text-center text-2xl font-black tracking-[0.5em] text-amber-700 bg-white" />
-          <FpError />
-          <FpSubmitBtn label="Verify Code" />
-        </form>
-      </div>
-    );
-
-    if (secView === "forgot-newpassword") return (
-      <div className="bg-amber-50 border border-amber-100 rounded-3xl overflow-hidden">
-        <div className="p-6 border-b border-amber-100 flex items-center gap-3">
-          <button onClick={() => fpGoTo("forgot-otp")} className="text-amber-700 hover:text-amber-900 transition-colors"><ArrowLeft size={18} /></button>
-          <div>
-            <h3 className="font-bold text-gray-900">Set New Password</h3>
-            <p className="text-gray-500 text-xs mt-0.5">Must be 8-16 characters with letters and numbers</p>
-          </div>
-        </div>
-        <form onSubmit={handleFpReset} className="p-6 space-y-4">
-          <div>
-            <label className="block text-xs font-bold text-gray-500 uppercase tracking-wider mb-2">New Password</label>
-            <div className="relative">
-              <KeyRound size={16} className="absolute left-4 top-1/2 -translate-y-1/2 text-gray-400" />
-              <input type="password" value={fpPassword} onChange={(e) => setFpPassword(e.target.value)} required
-                className="w-full pl-10 pr-4 py-3.5 border-2 border-amber-200 rounded-xl focus:border-amber-500 outline-none font-bold text-gray-900 bg-white" placeholder="••••••••" />
-            </div>
-            {fpPassword && (
-              <div className="mt-2">
-                <div className="h-1.5 bg-amber-100 rounded-full overflow-hidden">
-                  <div className={`h-full rounded-full transition-all duration-500 ${passwordStrength(fpPassword).color}`} style={{ width: passwordStrength(fpPassword).width }} />
-                </div>
-                <p className="text-xs text-gray-400 mt-1">{passwordStrength(fpPassword).label} password</p>
-              </div>
-            )}
-          </div>
-          <FpError />
-          <FpSubmitBtn label="Reset Password" />
-        </form>
-      </div>
-    );
-
-    if (secView === "forgot-done") return (
-      <div className="bg-green-50 border border-green-200 rounded-3xl p-8 text-center space-y-4">
-        <div className="w-16 h-16 bg-green-100 rounded-full flex items-center justify-center mx-auto">
-          <CheckCircle2 size={32} className="text-green-700" />
-        </div>
-        <div>
-          <h3 className="font-bold text-gray-900 text-lg">Password Reset!</h3>
-          <p className="text-gray-500 text-sm mt-1">Your password has been updated successfully.</p>
-        </div>
-        <button onClick={() => setSecView("main")} className="px-6 py-2.5 bg-green-900 text-white rounded-xl font-bold text-sm hover:bg-green-800 transition-colors uppercase tracking-widest">
-          Done
-        </button>
-      </div>
-    );
-
-    return (
-      <div className="bg-amber-50 border border-amber-100 rounded-3xl p-6 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
-        <div className="flex items-center gap-4">
-          <div className="w-10 h-10 bg-amber-100 rounded-xl flex items-center justify-center text-amber-700 shrink-0">
-            <RotateCcw size={20} />
-          </div>
-          <div>
-            <p className="font-bold text-gray-900">Forgot Password?</p>
-            <p className="text-gray-500 text-xs mt-0.5">Reset via your phone number and OTP</p>
-          </div>
-        </div>
-        <button onClick={() => { setFpOtp(""); setFpPassword(""); setFpError(""); fpGoTo("forgot-phone"); }}
-          className="flex items-center gap-2 px-5 py-2.5 border-2 border-amber-300 text-amber-700 rounded-xl font-bold text-sm hover:bg-amber-100 transition-colors whitespace-nowrap">
-          <RotateCcw size={16} /> Reset Password
-        </button>
-      </div>
-    );
-  };
 
   return (
     <div className="min-h-screen bg-[#f5f4f0]">
@@ -343,7 +243,7 @@ export default function ProfilePage() {
           <div className="flex flex-col sm:flex-row items-center sm:items-end gap-6">
             <div className="relative group">
               <div className="w-24 h-24 rounded-full overflow-hidden border-4 border-white/20 shadow-xl bg-green-700 flex items-center justify-center">
-                {avatarPreview ? <img src={avatarPreview} alt="Profile" className="w-full h-full object-cover" /> : <span className="text-3xl font-black text-white">{getInitials()}</span>}
+                {avatarPreview ? <img src={avatarPreview} alt="Profile" className="w-full h-full object-cover" referrerPolicy="no-referrer" /> : <span className="text-3xl font-black text-white">{getInitials()}</span>}
               </div>
               <button onClick={() => fileInputRef.current?.click()} className="absolute inset-0 bg-black/50 rounded-full flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity cursor-pointer">
                 <Camera size={22} className="text-white" />
@@ -406,7 +306,7 @@ export default function ProfilePage() {
             <div className="p-8 grid grid-cols-1 md:grid-cols-2 gap-6">
               <div className="md:col-span-2 flex items-center gap-6 p-6 bg-gray-50 rounded-2xl">
                 <div className="w-20 h-20 rounded-full overflow-hidden border-4 border-white shadow-md bg-green-100 flex items-center justify-center flex-shrink-0">
-                  {avatarPreview ? <img src={avatarPreview} alt="Profile" className="w-full h-full object-cover" /> : <span className="text-2xl font-black text-green-800">{getInitials()}</span>}
+                  {avatarPreview ? <img src={avatarPreview} alt="Profile" className="w-full h-full object-cover" referrerPolicy="no-referrer" /> : <span className="text-2xl font-black text-green-800">{getInitials()}</span>}
                 </div>
                 <div>
                   <p className="font-bold text-gray-900 mb-1">Profile Photo</p>
@@ -464,7 +364,8 @@ export default function ProfilePage() {
           </div>
         )}
 
-        {activeTab === "security" && isPhoneUser && (
+        {/* SECURITY TAB (Never shows for Google Users) */}
+        {activeTab === "security" && !isGoogleUser && (
           <div className="space-y-6">
             <div className="bg-white rounded-3xl shadow-sm border border-gray-100 overflow-hidden">
               <div className="p-8 border-b border-gray-100">
@@ -522,27 +423,142 @@ export default function ProfilePage() {
               </form>
             </div>
 
-            <ForgotPasswordSection />
-          </div>
-        )}
-
-        {activeTab === "orders" && (
-          <div className="bg-white rounded-3xl shadow-sm border border-gray-100 overflow-hidden">
-            <div className="p-8 border-b border-gray-100">
-              <h2 className="text-xl font-bold text-gray-900 uppercase">My Orders</h2>
-              <p className="text-gray-500 text-sm mt-0.5">Track and manage your purchases</p>
-            </div>
-            <div className="flex flex-col items-center justify-center py-24 px-8 text-center">
-              <div className="w-20 h-20 bg-gray-100 rounded-full flex items-center justify-center mb-6">
-                <Package size={32} className="text-gray-300" />
+            {/* FORGOT PASSWORD INLINED SECTIONS */}
+            {secView === "main" && (
+              <div className="bg-amber-50 border border-amber-100 rounded-3xl p-6 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
+                <div className="flex items-center gap-4">
+                  <div className="w-10 h-10 bg-amber-100 rounded-xl flex items-center justify-center text-amber-700 shrink-0">
+                    <RotateCcw size={20} />
+                  </div>
+                  <div>
+                    <p className="font-bold text-gray-900">Forgot Password?</p>
+                    <p className="text-gray-500 text-xs mt-0.5">Reset via your phone number and OTP</p>
+                  </div>
+                </div>
+                <button onClick={() => { setFpOtp(""); setFpPassword(""); setFpError(""); fpGoTo("forgot-phone"); }}
+                  className="flex items-center gap-2 px-5 py-2.5 border-2 border-amber-300 text-amber-700 rounded-xl font-bold text-sm hover:bg-amber-100 transition-colors whitespace-nowrap">
+                  <RotateCcw size={16} /> Reset Password
+                </button>
               </div>
-              <h3 className="text-lg font-bold text-gray-900 mb-2 uppercase">No orders yet</h3>
-              <p className="text-gray-500 text-sm mb-8 max-w-xs">When you place an order, it will appear here.</p>
-              <Link href="/shop" className="bg-green-900 text-white px-8 py-3.5 rounded-xl font-bold text-sm hover:bg-green-800 uppercase tracking-widest">Start Shopping</Link>
-            </div>
+            )}
+
+            {secView === "forgot-phone" && (
+              <div className="bg-amber-50 border border-amber-100 rounded-3xl overflow-hidden">
+                <div className="p-6 border-b border-amber-100 flex items-center gap-3">
+                  <button type="button" onClick={() => fpGoTo("main")} className="text-amber-700 hover:text-amber-900 transition-colors"><ArrowLeft size={18} /></button>
+                  <div>
+                    <h3 className="font-bold text-gray-900">Reset Password</h3>
+                    <p className="text-gray-500 text-xs mt-0.5">We'll send a code to verify your identity</p>
+                  </div>
+                </div>
+                <form onSubmit={handleFpSendOtp} className="p-6 space-y-4">
+                  <div>
+                    <label className="block text-xs font-bold text-gray-500 uppercase tracking-wider mb-2">Phone Number</label>
+                    <div className="relative">
+                      <Phone size={16} className="absolute left-4 top-1/2 -translate-y-1/2 text-gray-400" />
+                      <input type="tel" value={fpPhone} onChange={(e) => setFpPhone(e.target.value)} required
+                        className="w-full pl-10 pr-4 py-3.5 border-2 border-amber-200 rounded-xl focus:border-amber-500 outline-none font-bold text-gray-900 bg-white" placeholder="+91 00000 00000" />
+                    </div>
+                  </div>
+                  {fpError && <div className="flex items-start gap-2 bg-red-50 border border-red-100 text-red-700 text-xs font-bold px-4 py-3 rounded-xl"><X size={14} className="shrink-0 mt-0.5" />{fpError}</div>}
+                  <button type="submit" disabled={fpLoading} className="flex items-center gap-2 px-8 py-3.5 bg-amber-600 text-white rounded-xl font-bold text-sm hover:bg-amber-700 uppercase tracking-widest disabled:opacity-60 transition-colors">
+                    {fpLoading ? <Loader2 size={16} className="animate-spin" /> : <RotateCcw size={16} />} Send OTP
+                  </button>
+                </form>
+              </div>
+            )}
+
+            {secView === "forgot-otp" && (
+              <div className="bg-amber-50 border border-amber-100 rounded-3xl overflow-hidden">
+                <div className="p-6 border-b border-amber-100 flex items-center gap-3">
+                  <button type="button" onClick={() => fpGoTo("forgot-phone")} className="text-amber-700 hover:text-amber-900 transition-colors"><ArrowLeft size={18} /></button>
+                  <div>
+                    <h3 className="font-bold text-gray-900">Verify Identity</h3>
+                    <p className="text-gray-500 text-xs mt-0.5">Code sent to <span className="font-bold">{fpPhone}</span></p>
+                  </div>
+                </div>
+                <form onSubmit={handleFpVerifyOtp} className="p-6 space-y-4">
+                  <input required type="text" inputMode="numeric" maxLength={6}
+                    value={fpOtp} onChange={(e) => setFpOtp(e.target.value.replace(/\D/g, ""))} placeholder="000000"
+                    className="w-full py-4 border-2 border-amber-200 rounded-xl outline-none focus:border-amber-500 text-center text-2xl font-black tracking-[0.5em] text-amber-700 bg-white" />
+                  {fpError && <div className="flex items-start gap-2 bg-red-50 border border-red-100 text-red-700 text-xs font-bold px-4 py-3 rounded-xl"><X size={14} className="shrink-0 mt-0.5" />{fpError}</div>}
+                  <button type="submit" disabled={fpLoading} className="flex items-center gap-2 px-8 py-3.5 bg-amber-600 text-white rounded-xl font-bold text-sm hover:bg-amber-700 uppercase tracking-widest disabled:opacity-60 transition-colors">
+                     {fpLoading ? <Loader2 size={16} className="animate-spin" /> : <Shield size={16} />} Verify Code
+                  </button>
+                </form>
+              </div>
+            )}
+
+            {secView === "forgot-newpassword" && (
+              <div className="bg-amber-50 border border-amber-100 rounded-3xl overflow-hidden">
+                <div className="p-6 border-b border-amber-100 flex items-center gap-3">
+                  <button type="button" onClick={() => fpGoTo("forgot-otp")} className="text-amber-700 hover:text-amber-900 transition-colors"><ArrowLeft size={18} /></button>
+                  <div>
+                    <h3 className="font-bold text-gray-900">Set New Password</h3>
+                    <p className="text-gray-500 text-xs mt-0.5">Must be 8-16 characters with letters and numbers</p>
+                  </div>
+                </div>
+                <form onSubmit={handleFpReset} className="p-6 space-y-4">
+                  <div>
+                    <label className="block text-xs font-bold text-gray-500 uppercase tracking-wider mb-2">New Password</label>
+                    <div className="relative">
+                      <KeyRound size={16} className="absolute left-4 top-1/2 -translate-y-1/2 text-gray-400" />
+                      <input type="password" value={fpPassword} onChange={(e) => setFpPassword(e.target.value)} required
+                        className="w-full pl-10 pr-4 py-3.5 border-2 border-amber-200 rounded-xl focus:border-amber-500 outline-none font-bold text-gray-900 bg-white" placeholder="••••••••" />
+                    </div>
+                    {fpPassword && (
+                      <div className="mt-2">
+                        <div className="h-1.5 bg-amber-100 rounded-full overflow-hidden">
+                          <div className={`h-full rounded-full transition-all duration-500 ${fpPwStrength.color}`} style={{ width: fpPwStrength.width }} />
+                        </div>
+                        <p className="text-xs text-gray-400 mt-1">{fpPwStrength.label} password</p>
+                      </div>
+                    )}
+                  </div>
+                  {fpError && <div className="flex items-start gap-2 bg-red-50 border border-red-100 text-red-700 text-xs font-bold px-4 py-3 rounded-xl"><X size={14} className="shrink-0 mt-0.5" />{fpError}</div>}
+                  <button type="submit" disabled={fpLoading} className="flex items-center gap-2 px-8 py-3.5 bg-amber-600 text-white rounded-xl font-bold text-sm hover:bg-amber-700 uppercase tracking-widest disabled:opacity-60 transition-colors">
+                    {fpLoading ? <Loader2 size={16} className="animate-spin" /> : <RotateCcw size={16} />} Reset Password
+                  </button>
+                </form>
+              </div>
+            )}
+
+            {secView === "forgot-done" && (
+              <div className="bg-green-50 border border-green-200 rounded-3xl p-8 text-center space-y-4">
+                <div className="w-16 h-16 bg-green-100 rounded-full flex items-center justify-center mx-auto">
+                  <CheckCircle2 size={32} className="text-green-700" />
+                </div>
+                <div>
+                  <h3 className="font-bold text-gray-900 text-lg">Password Reset!</h3>
+                  <p className="text-gray-500 text-sm mt-1">Your password has been updated successfully.</p>
+                </div>
+                <button type="button" onClick={() => setSecView("main")} className="px-6 py-2.5 bg-green-900 text-white rounded-xl font-bold text-sm hover:bg-green-800 transition-colors uppercase tracking-widest">
+                  Done
+                </button>
+              </div>
+            )}
           </div>
         )}
 
+        {/* ──────── ORDERS TAB ──────── */}
+        {activeTab === "orders" && (
+           <div className="bg-white rounded-3xl shadow-sm border border-gray-100 overflow-hidden">
+             <div className="p-8 border-b border-gray-100">
+               <h2 className="text-xl font-bold text-gray-900 uppercase">My Orders</h2>
+               <p className="text-gray-500 text-sm mt-0.5">Track and manage your purchases</p>
+             </div>
+             <div className="flex flex-col items-center justify-center py-24 px-8 text-center">
+               <div className="w-20 h-20 bg-gray-100 rounded-full flex items-center justify-center mb-6">
+                 <Package size={32} className="text-gray-300" />
+               </div>
+               <h3 className="text-lg font-bold text-gray-900 mb-2 uppercase">No orders yet</h3>
+               <p className="text-gray-500 text-sm mb-8 max-w-xs">When you place an order, it will appear here.</p>
+               <Link href="/shop" className="bg-green-900 text-white px-8 py-3.5 rounded-xl font-bold text-sm hover:bg-green-800 uppercase tracking-widest">Start Shopping</Link>
+             </div>
+           </div>
+        )}
+
+        {/* ──────── PREFERENCES TAB ──────── */}
         {activeTab === "preferences" && (
           <div className="bg-white rounded-3xl shadow-sm border border-gray-100 overflow-hidden">
             <div className="p-8 border-b border-gray-100">

@@ -1,3 +1,4 @@
+// shop
 "use client";
 import React, { useState, useMemo, useEffect } from 'react';
 import Image from 'next/image';
@@ -34,7 +35,7 @@ export default function ShopPage() {
     const fetchProducts = async () => {
       try {
         setLoading(true);
-        const res = await fetch("http://localhost:8000/products");
+        const res = await fetch("http://192.168.0.101:8000/products");
         if (!res.ok) throw new Error("Failed to fetch products");
         const data = await res.json();
         setProducts(data);
