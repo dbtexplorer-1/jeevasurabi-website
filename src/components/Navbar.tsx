@@ -1,4 +1,3 @@
-// NavBar
 "use client";
 import React, { useState, useEffect, useRef } from 'react';
 import Link from 'next/link';
@@ -68,7 +67,15 @@ export default function Navbar({ cartCount, wishlistCount, onOpenCart, onOpenWis
 
         <div className="flex items-center">
           <Link href="/">
-            <Image src="/icon.png" alt="Jeevasurabi Logo" width={120} height={40} className="object-contain h-8 md:h-10 w-auto" priority />
+            {/* UPDATED: Increased width, height, and Tailwind scaling classes (h-10 md:h-14) */}
+            <Image 
+              src="/icon.png" 
+              alt="Jeevasurabi Logo" 
+              width={160} 
+              height={55} 
+              className="object-contain h-10 md:h-14 w-auto" 
+              priority 
+            />
           </Link>
         </div>
 
@@ -112,7 +119,6 @@ export default function Navbar({ cartCount, wishlistCount, onOpenCart, onOpenWis
                     className="w-6 h-6 md:w-8 md:h-8 rounded-full object-cover border-2 border-white/50" 
                   />
                 ) : (
-                  // FIXED: Show initials in a green circle if logged in but no photo
                   <div className="w-6 h-6 md:w-8 md:h-8 rounded-full bg-white text-green-900 flex items-center justify-center font-black text-xs md:text-sm border-2 border-white/50">
                     {getInitials()}
                   </div>

@@ -33,16 +33,14 @@ export default function Footer() {
         {/* Right: Centered content on green background */}
         <div className="w-full md:w-1/2 bg-green-900 flex flex-col items-center justify-center p-10 py-14 text-center">
 
-          {/* Logo Section — Adjusted scaling for better visibility */}
+          {/* Logo Section — Removed the invert classes so your actual logo shows */}
           <div className="mb-6 flex items-center justify-center">
             <Image
               src="/icon.png"
               alt="Jeevasurabi Logo"
-              width={200} // Increased width slightly
-              height={70} // Increased height slightly
-              // This automatically turns a dark logo into white.
-              // IF your logo is already white, REMOVE THESE TWO CLASSES:
-              className="object-contain brightness-0 invert" 
+              width={200} 
+              height={70} 
+              className="object-contain" 
             />
           </div>
 
