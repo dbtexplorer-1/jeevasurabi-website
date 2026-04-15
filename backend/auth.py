@@ -1,4 +1,5 @@
 # backend/auth.py
+import logging
 from datetime import datetime, timedelta, timezone
 from typing import Optional
 from jose import JWTError, jwt
@@ -7,6 +8,12 @@ from google.oauth2 import id_token
 from google.auth.transport import requests
 import random
 import resend
+
+# ==========================================
+# 0. LOGGING CONFIGURATION
+# ==========================================
+logging.basicConfig(level=logging.INFO)
+logger = logging.getLogger(__name__)
 
 # ==========================================
 # 1. SECURITY CONFIGURATION
@@ -67,10 +74,10 @@ def send_sms_otp(phone_number: str, otp: str):
     Simulates sending an SMS. 
     In production, you would use Twilio, Fast2SMS, or Firebase here.
     """
-    print("\n" + "="*40)
-    print(f"📱 SMS SENT TO: {phone_number}")
-    print(f"🔢 YOUR OTP CODE: {otp}")
-    print("="*40 + "\n")
+    logger.warning("\n" + "="*40)
+    logger.warning(f"📱 SMS SENT TO: {phone_number}")
+    logger.warning(f"🔢 YOUR OTP CODE: {otp}")
+    logger.warning("="*40 + "\n")
     return True
 
 def send_otp_email(receiver_email: str, otp: str):
@@ -85,4 +92,5 @@ def send_otp_email(receiver_email: str, otp: str):
     try:
         return resend.Emails.send(params)
     except Exception as e:
-        print(f"Email failed: {e}")
+        # Also updated this to use the logger instead of print
+        logger.error(f"Email failed: {e}")
