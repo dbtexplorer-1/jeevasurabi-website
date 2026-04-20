@@ -1,4 +1,3 @@
-// profile
 "use client";
 import React, { useState, useRef, useEffect } from "react";
 import { useRouter } from "next/navigation";
@@ -32,6 +31,7 @@ export default function ProfilePage() {
   const [editingProfile, setEditingProfile] = useState(false);
   const [savingProfile, setSavingProfile] = useState(false);
   const [avatarPreview, setAvatarPreview] = useState<string | null>(null);
+  const [isUploading, setIsUploading] = useState(false); // New state for file upload status
 
   const [currentPassword, setCurrentPassword] = useState("");
   const [newPassword, setNewPassword] = useState("");
@@ -78,13 +78,45 @@ export default function ProfilePage() {
     setTimeout(() => setToast(null), 3500);
   };
 
-  const handleAvatarChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+  // --- UPDATED: HANDLE REAL FILE UPLOAD ---
+  const handleAvatarChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
-    if (file.size > 2 * 1024 * 1024) { showToast("Image must be smaller than 2MB", "error"); return; }
-    const reader = new FileReader();
-    reader.onload = () => setAvatarPreview(reader.result as string);
-    reader.readAsDataURL(file);
+
+    // 1. Client-side validation
+    if (file.size > 2 * 1024 * 1024) { 
+      showToast("Image must be smaller than 2MB", "error"); 
+      return; 
+    }
+
+    setIsUploading(true);
+    const token = localStorage.getItem("token");
+
+    try {
+      // 2. Prepare Form Data
+      const formData = new FormData();
+      formData.append("file", file);
+
+      // 3. Upload to backend
+      const res = await fetch(`${API_BASE}/upload-profile-pic`, {
+        method: "POST",
+        headers: { Authorization: `Bearer ${token}` },
+        body: formData,
+      });
+
+      if (res.ok) {
+        const data = await res.json();
+        setAvatarPreview(data.profile_pic);
+        updateUser({ profilePic: data.profile_pic }); // Sync with Navbar
+        showToast("Profile picture updated!", "success");
+      } else {
+        showToast("Failed to upload image", "error");
+      }
+    } catch (err) {
+      showToast("Server unreachable", "error");
+    } finally {
+      setIsUploading(false);
+    }
   };
 
   const handleSaveProfile = async () => {
@@ -95,13 +127,17 @@ export default function ProfilePage() {
       const res = await fetch(`${API_BASE}/profile`, {
         method: "PUT",
         headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
-        // Do not convert the Base64 image string to uppercase, only the name.
-        body: JSON.stringify({ full_name: fullName.toUpperCase(), email, phone_number: phone, profile_pic: avatarPreview }),
+        body: JSON.stringify({ 
+          full_name: fullName.toUpperCase(), 
+          email, 
+          phone_number: phone, 
+          profile_pic: avatarPreview // The persistent URL from the upload step
+        }),
       });
       if (res.ok) {
         const d = await res.json();
         updateUser({ fullName: d.full_name, email: d.email, phone: d.phone_number, profilePic: d.profile_pic });
-        setAvatarPreview(d.profile_pic); // Ensure the preview stays in sync with backend
+        setAvatarPreview(d.profile_pic); 
         setEditingProfile(false);
         showToast("Profile updated successfully!", "success");
       } else showToast("Failed to update profile", "error");
@@ -146,7 +182,6 @@ export default function ProfilePage() {
     finally { setFpLoading(false); }
   };
 
-  // FIX: Make a real API call to verify the OTP before showing the password screen
   const handleFpVerifyOtp = async (e: React.FormEvent) => {
     e.preventDefault();
     if (fpOtp.length !== 6) { setFpError("Enter the 6-digit code"); return; }
@@ -243,13 +278,29 @@ export default function ProfilePage() {
           <div className="flex flex-col sm:flex-row items-center sm:items-end gap-6">
             <div className="relative group">
               <div className="w-24 h-24 rounded-full overflow-hidden border-4 border-white/20 shadow-xl bg-green-700 flex items-center justify-center">
-                {avatarPreview ? <img src={avatarPreview} alt="Profile" className="w-full h-full object-cover" referrerPolicy="no-referrer" /> : <span className="text-3xl font-black text-white">{getInitials()}</span>}
+                {isUploading ? (
+                  <Loader2 className="animate-spin text-white" size={32} />
+                ) : (
+                  avatarPreview ? (
+                    <img src={avatarPreview} alt="Profile" className="w-full h-full object-cover" referrerPolicy="no-referrer" />
+                  ) : (
+                    <span className="text-3xl font-black text-white">{getInitials()}</span>
+                  )
+                )}
               </div>
-              <button onClick={() => fileInputRef.current?.click()} className="absolute inset-0 bg-black/50 rounded-full flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity cursor-pointer">
+              <button 
+                disabled={isUploading}
+                onClick={() => fileInputRef.current?.click()} 
+                className="absolute inset-0 bg-black/50 rounded-full flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity cursor-pointer disabled:cursor-not-allowed"
+              >
                 <Camera size={22} className="text-white" />
               </button>
               <input ref={fileInputRef} type="file" accept="image/*" className="hidden" onChange={handleAvatarChange} />
-              <button onClick={() => fileInputRef.current?.click()} className="absolute -bottom-1 -right-1 bg-amber-500 hover:bg-amber-400 text-white rounded-full p-1.5 shadow-lg transition-colors">
+              <button 
+                disabled={isUploading}
+                onClick={() => fileInputRef.current?.click()} 
+                className="absolute -bottom-1 -right-1 bg-amber-500 hover:bg-amber-400 text-white rounded-full p-1.5 shadow-lg transition-colors"
+              >
                 <Camera size={12} />
               </button>
             </div>
@@ -306,17 +357,26 @@ export default function ProfilePage() {
             <div className="p-8 grid grid-cols-1 md:grid-cols-2 gap-6">
               <div className="md:col-span-2 flex items-center gap-6 p-6 bg-gray-50 rounded-2xl">
                 <div className="w-20 h-20 rounded-full overflow-hidden border-4 border-white shadow-md bg-green-100 flex items-center justify-center flex-shrink-0">
-                  {avatarPreview ? <img src={avatarPreview} alt="Profile" className="w-full h-full object-cover" referrerPolicy="no-referrer" /> : <span className="text-2xl font-black text-green-800">{getInitials()}</span>}
+                  {isUploading ? (
+                    <Loader2 className="animate-spin text-green-900" size={24} />
+                  ) : (
+                    avatarPreview ? <img src={avatarPreview} alt="Profile" className="w-full h-full object-cover" referrerPolicy="no-referrer" /> : <span className="text-2xl font-black text-green-800">{getInitials()}</span>
+                  )}
                 </div>
                 <div>
                   <p className="font-bold text-gray-900 mb-1">Profile Photo</p>
                   <p className="text-gray-500 text-xs mb-3">JPG or PNG, max 2MB</p>
                   <div className="flex gap-3">
-                    <button onClick={() => fileInputRef.current?.click()} className="flex items-center gap-2 px-4 py-2 bg-green-900 text-white rounded-lg text-xs font-bold hover:bg-green-800 transition-colors">
-                      <Camera size={14} /> Upload Photo
+                    <button 
+                      disabled={isUploading}
+                      onClick={() => fileInputRef.current?.click()} 
+                      className="flex items-center gap-2 px-4 py-2 bg-green-900 text-white rounded-lg text-xs font-bold hover:bg-green-800 transition-colors disabled:opacity-50"
+                    >
+                      {isUploading ? <Loader2 size={14} className="animate-spin" /> : <Camera size={14} />} 
+                      {isUploading ? "Uploading..." : "Upload Photo"}
                     </button>
-                    {avatarPreview && (
-                      <button onClick={() => setAvatarPreview(null)} className="flex items-center gap-2 px-4 py-2 border border-red-200 text-red-500 rounded-lg text-xs font-bold hover:bg-red-50 transition-colors">
+                    {avatarPreview && !isUploading && (
+                      <button onClick={() => { setAvatarPreview(null); updateUser({ profilePic: "" }); }} className="flex items-center gap-2 px-4 py-2 border border-red-200 text-red-500 rounded-lg text-xs font-bold hover:bg-red-50 transition-colors">
                         <Trash2 size={14} /> Remove
                       </button>
                     )}
@@ -364,7 +424,7 @@ export default function ProfilePage() {
           </div>
         )}
 
-        {/* SECURITY TAB (Never shows for Google Users) */}
+        {/* SECURITY TAB */}
         {activeTab === "security" && !isGoogleUser && (
           <div className="space-y-6">
             <div className="bg-white rounded-3xl shadow-sm border border-gray-100 overflow-hidden">
@@ -423,7 +483,7 @@ export default function ProfilePage() {
               </form>
             </div>
 
-            {/* FORGOT PASSWORD INLINED SECTIONS */}
+            {/* FORGOT PASSWORD SECTION */}
             {secView === "main" && (
               <div className="bg-amber-50 border border-amber-100 rounded-3xl p-6 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
                 <div className="flex items-center gap-4">
@@ -483,7 +543,7 @@ export default function ProfilePage() {
                     className="w-full py-4 border-2 border-amber-200 rounded-xl outline-none focus:border-amber-500 text-center text-2xl font-black tracking-[0.5em] text-amber-700 bg-white" />
                   {fpError && <div className="flex items-start gap-2 bg-red-50 border border-red-100 text-red-700 text-xs font-bold px-4 py-3 rounded-xl"><X size={14} className="shrink-0 mt-0.5" />{fpError}</div>}
                   <button type="submit" disabled={fpLoading} className="flex items-center gap-2 px-8 py-3.5 bg-amber-600 text-white rounded-xl font-bold text-sm hover:bg-amber-700 uppercase tracking-widest disabled:opacity-60 transition-colors">
-                     {fpLoading ? <Loader2 size={16} className="animate-spin" /> : <Shield size={16} />} Verify Code
+                      {fpLoading ? <Loader2 size={16} className="animate-spin" /> : <Shield size={16} />} Verify Code
                   </button>
                 </form>
               </div>
@@ -540,7 +600,7 @@ export default function ProfilePage() {
           </div>
         )}
 
-        {/* ──────── ORDERS TAB ──────── */}
+        {/* ORDERS TAB */}
         {activeTab === "orders" && (
            <div className="bg-white rounded-3xl shadow-sm border border-gray-100 overflow-hidden">
              <div className="p-8 border-b border-gray-100">
@@ -558,7 +618,7 @@ export default function ProfilePage() {
            </div>
         )}
 
-        {/* ──────── PREFERENCES TAB ──────── */}
+        {/* PREFERENCES TAB */}
         {activeTab === "preferences" && (
           <div className="bg-white rounded-3xl shadow-sm border border-gray-100 overflow-hidden">
             <div className="p-8 border-b border-gray-100">

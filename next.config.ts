@@ -9,6 +9,9 @@ import type { NextConfig } from "next";
 
 /** @type {import('next').NextConfig} */
 const nextConfig = {
+  experimental: {
+    scrollRestoration: false, // This tells Next.js: "Stop remembering my scroll position"
+  },
   images: {
     remotePatterns: [
       {

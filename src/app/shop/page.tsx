@@ -1,8 +1,11 @@
-// shop
 "use client";
 import React, { useState, useMemo, useEffect } from 'react';
 import Image from 'next/image';
-import { Filter, Search, ChevronLeft, Star, ShieldCheck, Leaf, Droplets, ShoppingCart, Heart, Loader2, AlertCircle } from 'lucide-react';
+import { 
+  Filter, Search, ChevronLeft, Star, ShieldCheck, 
+  Leaf, Droplets, ShoppingCart, Heart, Loader2, 
+  AlertCircle, ChevronDown, ChevronUp 
+} from 'lucide-react';
 import { useCart } from '@/context/CartContext';
 import { useWishlist } from '@/context/WishlistContext';
 
@@ -13,7 +16,7 @@ interface Product {
   size: string;
   price: number;
   img: string;
-  stock_quantity: number; // Added from Backend
+  stock_quantity: number;
   description?: string;
 }
 
@@ -27,10 +30,19 @@ export default function ShopPage() {
   const [searchQuery, setSearchQuery] = useState("");
   const [selectedProduct, setSelectedProduct] = useState<Product | null>(null);
   
+  // Mobile Filter Toggle State
+  const [isMobileFilterOpen, setIsMobileFilterOpen] = useState(false);
+  
   const { addToCart } = useCart();
   const { toggleWishlist: contextToggleWishlist, isInWishlist } = useWishlist();
 
-  // --- FETCH PRODUCTS FROM BACKEND ---
+  // Scroll to top when a product is selected
+  useEffect(() => {
+    if (selectedProduct) {
+      window.scrollTo(0, 0);
+    }
+  }, [selectedProduct]);
+
   useEffect(() => {
     const fetchProducts = async () => {
       try {
@@ -46,7 +58,6 @@ export default function ShopPage() {
         setLoading(false);
       }
     };
-
     fetchProducts();
   }, []);
 
@@ -58,13 +69,11 @@ export default function ShopPage() {
   const filteredProducts = useMemo(() => {
     return products.filter((product) => {
       const matchesCategory = selectedCategory === "All" || product.category === selectedCategory;
-      const matchesSearch = product.name.toLowerCase().includes(searchQuery.toLowerCase()) || 
-                            product.category.toLowerCase().includes(searchQuery.toLowerCase());
+      const matchesSearch = product.name.toLowerCase().includes(searchQuery.toLowerCase());
       return matchesCategory && matchesSearch;
     });
   }, [selectedCategory, searchQuery, products]);
 
-  // Loading View
   if (loading) {
     return (
       <div className="min-h-screen flex flex-col items-center justify-center bg-[#fafaf9]">
@@ -74,7 +83,6 @@ export default function ShopPage() {
     );
   }
 
-  // Error View
   if (error) {
     return (
       <div className="min-h-screen flex flex-col items-center justify-center bg-[#fafaf9] px-4">
@@ -85,84 +93,84 @@ export default function ShopPage() {
     );
   }
 
-  // View: Product Detail Page
+  // --- View: Product Detail Page ---
   if (selectedProduct) {
     const isProductInWishlist = isInWishlist(selectedProduct.id);
     const isOutOfStock = selectedProduct.stock_quantity <= 0;
 
     return (
-      <div className="min-h-screen bg-white text-gray-900 pb-20">
+      <div className="min-h-screen bg-white text-gray-900 pb-10">
         <div className="border-b border-gray-100 bg-gray-50/50 sticky top-0 z-30 backdrop-blur-md">
           <div className="max-w-[1440px] mx-auto px-4 py-4 flex items-center gap-2 text-sm text-gray-500">
-            <button onClick={() => setSelectedProduct(null)} className="flex items-center hover:text-green-900 transition-colors font-medium">
-              <ChevronLeft size={16} className="mr-1" /> Back to Shop
+            <button onClick={() => setSelectedProduct(null)} className="flex items-center hover:text-green-900 transition-colors font-bold">
+              <ChevronLeft size={16} className="mr-1" /> Back
             </button>
-            <span>/</span>
-            <span>{selectedProduct.category}</span>
             <span>/</span>
             <span className="text-gray-900 font-semibold truncate">{selectedProduct.name}</span>
           </div>
         </div>
 
-        <div className="max-w-[1200px] mx-auto px-4 py-8 md:py-12">
-          <div className="flex flex-col md:flex-row gap-10 lg:gap-16">
-            <div className="md:w-1/2 flex-shrink-0">
-              <div className="sticky top-24 rounded-3xl overflow-hidden bg-gray-50 aspect-square border border-gray-100 p-8 flex items-center justify-center">
+        <div className="max-w-[1100px] mx-auto px-4 py-6 md:py-10">
+          <div className="flex flex-col md:flex-row gap-8 lg:gap-12 items-start">
+            
+            {/* Left: Product Image - Sized to fit screen better */}
+            <div className="w-full md:w-[45%] flex-shrink-0">
+              <div className="rounded-3xl overflow-hidden bg-gray-50 aspect-square border border-gray-100 p-6 flex items-center justify-center max-h-[400px] md:max-h-[500px]">
                 <div className="relative w-full h-full">
-                  <Image src={selectedProduct.img} alt={selectedProduct.name} fill className="object-contain hover:scale-105 transition-transform duration-500" />
+                  <Image src={selectedProduct.img} alt={selectedProduct.name} fill className="object-contain" />
                 </div>
               </div>
             </div>
 
-            <div className="md:w-1/2 flex flex-col justify-start pt-4">
-              <p className="text-green-800 font-bold tracking-widest uppercase text-xs mb-3 flex items-center gap-2">
-                <Leaf size={14} /> {selectedProduct.category}
+            {/* Right: Content */}
+            <div className="w-full md:w-[55%] pt-2">
+              <p className="text-green-800 font-black tracking-widest uppercase text-[10px] mb-2 flex items-center gap-2">
+                <Leaf size={12} /> {selectedProduct.category}
               </p>
-              <h1 className="text-3xl md:text-5xl font-serif text-gray-900 mb-4 leading-tight">{selectedProduct.name}</h1>
+              <h1 className="text-3xl md:text-4xl font-serif text-gray-900 mb-2 leading-tight">{selectedProduct.name}</h1>
               
-              <div className="flex items-center gap-4 mb-6">
-                <div className="flex text-amber-500"><Star size={18} fill="currentColor" /><Star size={18} fill="currentColor" /><Star size={18} fill="currentColor" /><Star size={18} fill="currentColor" /><Star size={18} fill="currentColor" /></div>
-                <span className="text-sm text-gray-500 underline">48 Reviews</span>
+              <div className="flex items-center gap-3 mb-4">
+                <div className="flex text-amber-500"><Star size={14} fill="currentColor" /><Star size={14} fill="currentColor" /><Star size={14} fill="currentColor" /><Star size={14} fill="currentColor" /><Star size={14} fill="currentColor" /></div>
+                <span className="text-xs text-gray-400 font-bold uppercase tracking-tighter">Verified Product</span>
               </div>
 
-              <div className="mb-8">
+              <div className="mb-6 flex items-baseline gap-3">
                 <span className="text-4xl font-black text-green-900">₹{selectedProduct.price}</span>
-                {isOutOfStock && <span className="ml-4 text-red-600 font-bold uppercase tracking-widest text-xs bg-red-50 px-3 py-1 rounded-full border border-red-100">Out of Stock</span>}
+                {isOutOfStock && <span className="text-red-600 font-bold uppercase text-[10px] bg-red-50 px-2 py-1 rounded">Out of Stock</span>}
               </div>
 
-              <div className="mb-8">
-                <h3 className="text-sm font-bold text-gray-900 mb-3 uppercase tracking-wider">Select Size</h3>
-                <div className="inline-block border-2 border-green-900 text-green-900 font-bold bg-green-50 px-6 py-3 rounded-xl cursor-default">{selectedProduct.size}</div>
+              <div className="mb-6">
+                <h3 className="text-[10px] font-bold text-gray-400 mb-2 uppercase tracking-widest">Select Size</h3>
+                <div className="inline-block border-2 border-green-900 text-green-900 font-bold bg-green-50 px-5 py-2 rounded-xl">{selectedProduct.size}</div>
               </div>
 
-              <div className="flex flex-col sm:flex-row gap-4 mb-10">
+              <div className="flex gap-3 mb-8">
                 <button 
                   disabled={isOutOfStock}
                   onClick={() => addToCart(selectedProduct)}
-                  className={`flex-1 py-4 rounded-xl font-bold uppercase tracking-widest transition-all active:scale-[0.98] shadow-lg flex items-center justify-center gap-2 ${isOutOfStock ? 'bg-gray-200 text-gray-400 cursor-not-allowed' : 'bg-green-900 text-white hover:bg-green-800'}`}
+                  className={`flex-1 py-4 rounded-xl font-bold uppercase tracking-widest text-xs transition-all shadow-lg flex items-center justify-center gap-2 ${isOutOfStock ? 'bg-gray-200 text-gray-400' : 'bg-green-900 text-white hover:bg-green-800'}`}
                 >
-                  <ShoppingCart size={20} /> Add to Cart
+                  <ShoppingCart size={18} /> Add to Cart
                 </button>
 
                 <button 
                   onClick={(e) => handleToggleWishlist(e, selectedProduct)}
-                  className={`px-6 flex items-center justify-center border-2 rounded-xl transition-all active:scale-[0.98] ${isProductInWishlist ? 'border-red-100 bg-red-50 text-red-500' : 'border-gray-200 text-gray-400'}`}
+                  className={`px-5 flex items-center justify-center border-2 rounded-xl transition-all ${isProductInWishlist ? 'border-red-100 bg-red-50 text-red-500' : 'border-gray-100 text-gray-300'}`}
                 >
-                  <Heart size={24} className={isProductInWishlist ? "fill-red-500 text-red-500" : ""} />
+                  <Heart size={20} className={isProductInWishlist ? "fill-red-500 text-red-500" : ""} />
                 </button>
               </div>
 
-              <div className="grid grid-cols-3 gap-4 border-y border-gray-100 py-6 mb-8">
-                <div className="flex flex-col items-center text-center gap-2"><div className="bg-green-50 p-3 rounded-full text-green-800"><Droplets size={20} /></div><span className="text-xs font-bold text-gray-600">Cold Pressed</span></div>
-                <div className="flex flex-col items-center text-center gap-2"><div className="bg-amber-50 p-3 rounded-full text-amber-700"><ShieldCheck size={20} /></div><span className="text-xs font-bold text-gray-600">100% Pure</span></div>
-                <div className="flex flex-col items-center text-center gap-2"><div className="bg-green-50 p-3 rounded-full text-green-800"><Leaf size={20} /></div><span className="text-xs font-bold text-gray-600">No Preservatives</span></div>
+              {/* Trust Badges */}
+              <div className="grid grid-cols-3 gap-2 border-y border-gray-100 py-5 mb-6">
+                <div className="flex flex-col items-center text-center gap-1"><div className="text-green-800"><Droplets size={18} /></div><span className="text-[10px] font-bold text-gray-500 uppercase">Pure</span></div>
+                <div className="flex flex-col items-center text-center gap-1"><div className="text-amber-700"><ShieldCheck size={18} /></div><span className="text-[10px] font-bold text-gray-500 uppercase">Safe</span></div>
+                <div className="flex flex-col items-center text-center gap-1"><div className="text-green-800"><Leaf size={18} /></div><span className="text-[10px] font-bold text-gray-500 uppercase">Organic</span></div>
               </div>
 
-              <div className="space-y-4">
-                <details className="group border border-gray-200 rounded-2xl bg-white p-6 [&_summary::-webkit-details-marker]:hidden" open>
-                  <summary className="flex cursor-pointer items-center justify-between font-bold text-gray-900">Product Description<span className="transition duration-300 group-open:-rotate-180"><ChevronLeft className="-rotate-90" /></span></summary>
-                  <div className="mt-4 text-gray-600 leading-relaxed">{selectedProduct.description || "Authentic traditional product preserved naturally."}</div>
-                </details>
+              <div className="text-sm text-gray-600 leading-relaxed bg-gray-50 p-6 rounded-2xl">
+                <h4 className="font-bold text-gray-900 mb-2 uppercase text-xs tracking-widest">Description</h4>
+                {selectedProduct.description || "Authentic traditional product preserved naturally. Extracted using wood-pressed methods to ensure maximum nutrition and taste."}
               </div>
             </div>
           </div>
@@ -171,62 +179,117 @@ export default function ShopPage() {
     );
   }
 
-  // View: Marketplace Grid
+  // --- View: Marketplace Grid ---
   return (
-    <div className="min-h-screen bg-[#fafaf9] text-gray-900">
-      <div className="sticky top-0 z-30 bg-white/80 backdrop-blur-md border-b border-gray-100 py-6 px-6 shadow-sm">
-        <div className="max-w-4xl mx-auto text-center">
-          <h1 className="text-2xl md:text-3xl font-serif text-green-900 mb-4">Our Marketplace</h1>
-          <div className="relative group">
-            <Search className="absolute left-6 top-1/2 -translate-y-1/2 text-gray-400 group-focus-within:text-green-800" size={20} />
-            <input type="text" placeholder="Search products..." value={searchQuery} onChange={(e) => setSearchQuery(e.target.value)} className="w-full pl-16 pr-8 py-4 bg-gray-50 border border-gray-100 rounded-2xl outline-none" />
+    <div className="min-h-screen bg-[#fafaf9] text-gray-900 flex flex-col">
+      <div className="bg-white border-b border-gray-100 py-6 px-6 shadow-sm sticky top-0 z-30">
+        <div className="max-w-4xl mx-auto flex flex-col items-center">
+          <h1 className="text-2xl font-serif text-green-900 mb-4">Our Marketplace</h1>
+          <div className="relative w-full max-w-xl">
+            <Search className="absolute left-5 top-1/2 -translate-y-1/2 text-gray-400" size={18} />
+            <input 
+              type="text" 
+              placeholder="Search wood-pressed oils..." 
+              value={searchQuery} 
+              onChange={(e) => setSearchQuery(e.target.value)} 
+              className="w-full pl-14 pr-6 py-3.5 bg-gray-50 border border-gray-100 rounded-2xl outline-none focus:border-green-900/30 transition-all" 
+            />
           </div>
         </div>
       </div>
 
-      <div className="max-w-[1440px] mx-auto px-4 md:px-8 py-12 flex flex-col md:flex-row gap-10 items-start">
-        <aside className="w-full md:w-72 flex-shrink-0 md:sticky md:top-40 z-20">
-          <div className="bg-white p-6 rounded-[2rem] shadow-sm border border-gray-100">
-            <h3 className="font-bold text-[10px] uppercase tracking-[0.3em] text-gray-400 mb-6 flex items-center"><Filter size={14} className="mr-3" /> Filter Categories</h3>
-            <div className="space-y-2">
+      <div className="max-w-[1440px] mx-auto px-4 md:px-8 py-8 flex flex-col md:flex-row gap-8 items-start w-full flex-1">
+        
+        {/* MOBILE CATEGORY DROPDOWN */}
+        <div className="md:hidden w-full">
+          <button 
+            onClick={() => setIsMobileFilterOpen(!isMobileFilterOpen)}
+            className="w-full flex items-center justify-between p-4 bg-white border border-gray-100 rounded-2xl font-bold text-green-900 uppercase tracking-widest text-xs"
+          >
+            <div className="flex items-center gap-2">
+              <Filter size={16} /> Filter: {selectedCategory}
+            </div>
+            {isMobileFilterOpen ? <ChevronUp size={16} /> : <ChevronDown size={16} />}
+          </button>
+          
+          {isMobileFilterOpen && (
+            <div className="mt-2 bg-white border border-gray-100 rounded-2xl p-2 shadow-xl animate-in slide-in-from-top-2 duration-200">
               {categories.map((cat) => (
-                <button key={cat} onClick={() => setSelectedCategory(cat)} className={`w-full text-left font-bold text-sm uppercase tracking-wider py-4 px-5 rounded-2xl transition-all ${selectedCategory === cat ? 'bg-green-900 text-white' : 'text-gray-500 hover:bg-green-50'}`}>{cat}</button>
+                <button 
+                  key={cat} 
+                  onClick={() => { setSelectedCategory(cat); setIsMobileFilterOpen(false); }} 
+                  className={`w-full text-left py-3 px-4 rounded-xl text-xs font-bold uppercase transition-colors ${selectedCategory === cat ? 'bg-green-900 text-white' : 'text-gray-500 hover:bg-green-50'}`}
+                >
+                  {cat}
+                </button>
+              ))}
+            </div>
+          )}
+        </div>
+
+        {/* DESKTOP SIDEBAR */}
+        <aside className="hidden md:block w-72 flex-shrink-0 sticky top-32">
+          <div className="bg-white p-6 rounded-[2rem] shadow-sm border border-gray-100">
+            <h3 className="font-bold text-[10px] uppercase tracking-[0.3em] text-gray-400 mb-6 flex items-center"><Filter size={14} className="mr-3" /> Categories</h3>
+            <div className="space-y-1">
+              {categories.map((cat) => (
+                <button 
+                  key={cat} 
+                  onClick={() => setSelectedCategory(cat)} 
+                  className={`w-full text-left font-bold text-xs uppercase tracking-wider py-4 px-5 rounded-2xl transition-all ${selectedCategory === cat ? 'bg-green-900 text-white shadow-lg shadow-green-900/20' : 'text-gray-500 hover:bg-green-50'}`}
+                >
+                  {cat}
+                </button>
               ))}
             </div>
           </div>
         </aside>
 
-        <main className="flex-1">
-          <div className="grid grid-cols-2 lg:grid-cols-4 gap-4 md:gap-8">
-            {filteredProducts.map((product) => {
-              const isProductInWishlist = isInWishlist(product.id);
-              const isOutOfStock = product.stock_quantity <= 0;
-              
-              return (
-                <div key={product.id} onClick={() => setSelectedProduct(product)} className="group bg-white rounded-2xl md:rounded-[2rem] overflow-hidden border border-gray-100 hover:shadow-xl transition-all duration-500 cursor-pointer flex flex-col">
-                  <div className="relative aspect-square overflow-hidden bg-gray-50">
-                    <Image src={product.img} alt={product.name} fill className="object-cover group-hover:scale-105 transition duration-1000" />
-                    <button onClick={(e) => handleToggleWishlist(e, product)} className="absolute top-3 right-3 p-2.5 bg-white/80 backdrop-blur-sm rounded-full text-gray-400 hover:text-red-500 z-20"><Heart size={18} className={isProductInWishlist ? "fill-red-500 text-red-500" : ""} /></button>
-                    {!isOutOfStock && (
-                      <button onClick={(e) => { e.stopPropagation(); addToCart(product); }} className="absolute bottom-4 left-4 right-4 bg-white/95 backdrop-blur-md text-green-900 py-3 rounded-2xl font-bold uppercase text-[10px] tracking-widest opacity-0 translate-y-4 group-hover:opacity-100 group-hover:translate-y-0 transition-all z-10 hover:bg-green-900 hover:text-white">Quick Add</button>
-                    )}
-                    {isOutOfStock && (
-                      <div className="absolute inset-0 bg-white/60 backdrop-blur-[2px] flex items-center justify-center">
-                        <span className="bg-red-600 text-white text-[10px] font-black uppercase px-4 py-2 rounded-lg rotate-[-10deg] shadow-lg">Out of Stock</span>
-                      </div>
-                    )}
-                  </div>
-                  <div className="p-4 md:p-6 flex flex-col flex-1 justify-between">
-                    <div>
-                      <h3 className="font-serif text-sm md:text-lg text-gray-800 leading-tight mb-2">{product.name}</h3>
-                      <p className="text-xs md:text-sm font-bold text-amber-700 bg-amber-50 inline-block px-3 py-1 rounded-lg uppercase tracking-wider mb-4">{product.size}</p>
+        {/* PRODUCTS GRID */}
+        <main className="flex-1 w-full">
+          {filteredProducts.length === 0 ? (
+            <div className="flex flex-col items-center justify-center py-20 text-gray-400">
+              <Search size={48} className="mb-4 opacity-20" />
+              <p className="font-bold uppercase tracking-widest text-sm">No products found</p>
+            </div>
+          ) : (
+            <div className="grid grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4 md:gap-6">
+              {filteredProducts.map((product) => {
+                const isProductInWishlist = isInWishlist(product.id);
+                const isOutOfStock = product.stock_quantity <= 0;
+                
+                return (
+                  <div 
+                    key={product.id} 
+                    onClick={() => setSelectedProduct(product)} 
+                    className="group bg-white rounded-2xl md:rounded-[2rem] overflow-hidden border border-gray-100 hover:shadow-xl transition-all duration-500 cursor-pointer flex flex-col"
+                  >
+                    <div className="relative aspect-square overflow-hidden bg-gray-50">
+                      <Image src={product.img} alt={product.name} fill className="object-cover group-hover:scale-105 transition duration-1000" />
+                      <button 
+                        onClick={(e) => handleToggleWishlist(e, product)} 
+                        className="absolute top-2 right-2 md:top-3 md:right-3 p-2 bg-white/80 backdrop-blur-sm rounded-full text-gray-300 hover:text-red-500 z-20"
+                      >
+                        <Heart size={16} className={isProductInWishlist ? "fill-red-500 text-red-500" : ""} />
+                      </button>
+                      {isOutOfStock && (
+                        <div className="absolute inset-0 bg-white/60 backdrop-blur-[1px] flex items-center justify-center">
+                          <span className="bg-red-600 text-white text-[8px] md:text-[10px] font-black uppercase px-3 py-1.5 rounded shadow-lg">Sold Out</span>
+                        </div>
+                      )}
                     </div>
-                    <div className="flex justify-between items-center pt-2 border-t border-gray-50"><span className="text-lg md:text-2xl font-black text-green-900">₹{product.price}</span></div>
+                    <div className="p-4 md:p-6 flex flex-col flex-1">
+                      <h3 className="font-serif text-sm md:text-base text-gray-800 leading-tight mb-2 line-clamp-2 min-h-[2.5rem]">{product.name}</h3>
+                      <div className="flex items-center justify-between mt-auto pt-4 border-t border-gray-50">
+                        <span className="text-base md:text-xl font-black text-green-900">₹{product.price}</span>
+                        <span className="text-[10px] font-bold text-amber-700 bg-amber-50 px-2 py-0.5 rounded uppercase">{product.size}</span>
+                      </div>
+                    </div>
                   </div>
-                </div>
-              );
-            })}
-          </div>
+                );
+              })}
+            </div>
+          )}
         </main>
       </div>
     </div>

@@ -46,3 +46,6 @@ next-env.d.ts
 # backend/venv/Lib
 **/venv/
 **/__pycache__/
+
+#uploads
+backend/uploads/

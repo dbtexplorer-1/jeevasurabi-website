@@ -17,11 +17,9 @@ export default function CheckoutPage() {
   const { user, isLoggedIn, loading } = useAuth();
   const { cart, totalPrice, cartCount, clearCart } = useCart();
 
-  // FLOW CHANGED: Step 1 is now "shipping"
   const [step, setStep] = useState<CheckoutStep>("shipping");
   const [isProcessing, setIsProcessing] = useState(false);
 
-  // Shipping Form State
   const [shippingInfo, setShippingInfo] = useState({
     firstName: "",
     lastName: "",
@@ -34,20 +32,27 @@ export default function CheckoutPage() {
   });
 
   // ==========================================
-  // COURIER CHARGE LOGIC
+  // UPDATED COURIER CHARGE LOGIC
   // ==========================================
 
   const totalWeightGrams = cart.reduce((total, item) => {
-    let itemWeight = 1000;
+    let itemWeight = 0;
     const sizeStr = (item.size || "").toLowerCase();
+    
+    // Extract the number from strings like "500ml", "1L", "250g"
+    const numericValue = parseFloat(sizeStr.replace(/[^\d.]/g, '')) || 0;
 
     if (sizeStr.includes('ml') || sizeStr.includes('g')) {
-      itemWeight = parseInt(sizeStr.replace(/\D/g, '')) || 1000;
+      itemWeight = numericValue; // 500ml = 500g
     } else if (sizeStr.includes('l') || sizeStr.includes('kg')) {
-      itemWeight = (parseFloat(sizeStr.replace(/[^\d.]/g, '')) || 1) * 1000;
+      itemWeight = numericValue * 1000; // 1L = 1000g
+    } else {
+      itemWeight = 1000; // Default fallback if format is unknown
     }
 
-    return total + ((itemWeight + 150) * item.quantity);
+    // IMPORTANT: Add 150g per item for the bottle and packing material weight
+    const packagingBuffer = 150; 
+    return total + ((itemWeight + packagingBuffer) * item.quantity);
   }, 0);
 
   const getShippingFee = (state: string, weightGrams: number) => {
@@ -55,17 +60,21 @@ export default function CheckoutPage() {
 
     const southIndia = ["Kerala", "Karnataka", "Andhra Pradesh", "Telangana", "Puducherry"];
 
+    // Rule 1: Within Tamil Nadu (rs 25 for every 1000g)
     if (state === "Tamil Nadu") {
       return Math.ceil(weightGrams / 1000) * 25;
     }
 
+    // Rule 2: South India excluding TN (rs 50 for every 1000g)
     if (southIndia.includes(state)) {
       return Math.ceil(weightGrams / 1000) * 50;
     }
 
+    // Rule 3: Rest of India
     if (weightGrams <= 5000) {
-      return 320;
+      return 320; // Up to 5000g = rs 320 flat
     } else {
+      // Rule 4: Above 5000g in ROI (rs 60 extra for every 1000g)
       const extraWeight = weightGrams - 5000;
       return 320 + (Math.ceil(extraWeight / 1000) * 60);
     }
@@ -76,14 +85,12 @@ export default function CheckoutPage() {
 
   // ==========================================
 
-  // Protect the route
   useEffect(() => {
     if (!loading && !isLoggedIn) {
       router.push("/login");
     }
   }, [loading, isLoggedIn, router]);
 
-  // Pre-fill phone if available
   useEffect(() => {
     if (user?.phone && !shippingInfo.phone) {
       setShippingInfo(prev => ({ ...prev, phone: user.phone! }));
@@ -117,23 +124,18 @@ export default function CheckoutPage() {
 
   const handleShippingSubmit = (e: React.FormEvent) => {
     e.preventDefault();
-    // Move to summary step now
     setStep("summary");
     window.scrollTo(0, 0);
   };
 
   const handleRazorpayPayment = async () => {
     setIsProcessing(true);
-    
-    // --- RAZORPAY LOGIC GOES HERE LATER ---
     setTimeout(() => {
       setIsProcessing(false);
-      alert(`Razorpay integration pending!\nTotal Weight: ${(totalWeightGrams/1000).toFixed(2)}kg\nShipping Fee: ₹${shippingFee}\nFinal Amount: ₹${finalTotal}`);
+      alert(`Razorpay integration pending!\nTotal Package Weight: ${(totalWeightGrams/1000).toFixed(2)}kg\nShipping Fee: ₹${shippingFee}\nFinal Amount: ₹${finalTotal}`);
     }, 1500);
   };
 
-  // --- UI Components ---
-  
   const Stepper = () => (
     <div className="flex items-center justify-center mb-10">
       <div className="flex items-center gap-2 md:gap-4">
@@ -173,7 +175,6 @@ export default function CheckoutPage() {
 
         <div className="bg-white rounded-3xl shadow-xl border border-gray-100 overflow-hidden">
           
-          {/* STEP 1: SHIPPING (Now the first step) */}
           {step === "shipping" && (
             <div className="animate-in fade-in slide-in-from-bottom-4 duration-500">
               <div className="p-8 border-b border-gray-100 bg-gray-50 flex items-center gap-3">
@@ -190,11 +191,11 @@ export default function CheckoutPage() {
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
                   <div>
                     <label className="block text-xs font-bold text-gray-500 uppercase tracking-wider mb-2">First Name *</label>
-                    <input required type="text" value={shippingInfo.firstName} onChange={(e) => setShippingInfo({...shippingInfo, firstName: e.target.value})} className="w-full px-5 py-4 border-2 border-gray-100 rounded-xl focus:border-green-900 outline-none font-bold text-gray-900 transition-colors" placeholder="Your First Name" />
+                    <input required type="text" value={shippingInfo.firstName} onChange={(e) => setShippingInfo({...shippingInfo, firstName: e.target.value})} className="w-full px-5 py-4 border-2 border-gray-100 rounded-xl focus:border-green-900 outline-none font-bold text-gray-900 transition-colors" placeholder="First Name" />
                   </div>
                   <div>
                     <label className="block text-xs font-bold text-gray-500 uppercase tracking-wider mb-2">Last Name *</label>
-                    <input required type="text" value={shippingInfo.lastName} onChange={(e) => setShippingInfo({...shippingInfo, lastName: e.target.value})} className="w-full px-5 py-4 border-2 border-gray-100 rounded-xl focus:border-green-900 outline-none font-bold text-gray-900 transition-colors" placeholder="Your Last Name" />
+                    <input required type="text" value={shippingInfo.lastName} onChange={(e) => setShippingInfo({...shippingInfo, lastName: e.target.value})} className="w-full px-5 py-4 border-2 border-gray-100 rounded-xl focus:border-green-900 outline-none font-bold text-gray-900 transition-colors" placeholder="Last Name" />
                   </div>
                   <div className="md:col-span-2">
                     <label className="block text-xs font-bold text-gray-500 uppercase tracking-wider mb-2">Street Address *</label>
@@ -240,11 +241,8 @@ export default function CheckoutPage() {
             </div>
           )}
 
-          {/* STEP 2: ORDER SUMMARY (Now the second step) */}
           {step === "summary" && (
             <div className="animate-in fade-in slide-in-from-bottom-4 duration-500 flex flex-col md:flex-row">
-              
-              {/* Left side: Cart Items & Address */}
               <div className="flex-1 border-b md:border-b-0 md:border-r border-gray-100">
                 <div className="p-8 border-b border-gray-100 bg-gray-50 flex items-center gap-3">
                   <div className="w-12 h-12 bg-white rounded-full flex items-center justify-center text-green-900 shadow-sm">
@@ -256,7 +254,6 @@ export default function CheckoutPage() {
                   </div>
                 </div>
 
-                {/* Delivery Info Box */}
                 <div className="p-8 pb-4">
                   <div className="flex items-center justify-between mb-4">
                     <p className="font-bold text-gray-900 uppercase tracking-wider text-sm flex items-center gap-2">
@@ -272,7 +269,6 @@ export default function CheckoutPage() {
                   </div>
                 </div>
 
-                {/* Items List */}
                 <div className="p-8 pt-4 space-y-6">
                   <p className="font-bold text-gray-900 uppercase tracking-wider text-sm flex items-center gap-2 mb-4">
                     <Package size={16} className="text-green-900" /> Order Items ({cartCount})
@@ -295,7 +291,6 @@ export default function CheckoutPage() {
                 </div>
               </div>
 
-              {/* Right side: Price Breakdown */}
               <div className="w-full md:w-96 bg-gray-50 p-8 flex flex-col">
                 <h3 className="font-bold text-gray-900 uppercase tracking-widest mb-6">Price Details</h3>
                 
@@ -309,8 +304,8 @@ export default function CheckoutPage() {
                     <span className="font-bold text-gray-900">₹{shippingFee}</span>
                   </div>
                   
-                  <p className="text-[10px] text-gray-400 font-bold uppercase mt-1 text-right">
-                    Package Weight: {(totalWeightGrams/1000).toFixed(1)}kg
+                  <p className="text-[10px] text-gray-400 font-bold uppercase mt-1 text-right italic">
+                    Est. Package Weight: {(totalWeightGrams/1000).toFixed(1)}kg
                   </p>
 
                   <div className="h-px bg-gray-200 my-4"></div>
@@ -330,7 +325,6 @@ export default function CheckoutPage() {
             </div>
           )}
 
-          {/* STEP 3: PAYMENT PAGE */}
           {step === "payment" && (
             <div className="animate-in fade-in slide-in-from-bottom-4 duration-500">
               <div className="p-8 border-b border-gray-100 bg-gray-50 flex items-center gap-3">

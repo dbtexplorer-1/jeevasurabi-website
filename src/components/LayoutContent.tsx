@@ -24,6 +24,7 @@ export default function LayoutContent({ children }: { children: React.ReactNode 
 
   const shouldHideHeaderFooter = pathname.startsWith('/admin') || pathname === '/login' || pathname === '/checkout';
 
+  // EXISTING: Toast notification listener
   useEffect(() => {
     let timeoutId: NodeJS.Timeout;
     const handleToast = (e: Event) => {
@@ -38,6 +39,11 @@ export default function LayoutContent({ children }: { children: React.ReactNode 
       clearTimeout(timeoutId);
     };
   }, []);
+
+  // NEW: Scroll to top on route change (Fixes the scroll jump bug)
+  useEffect(() => {
+    window.scrollTo(0, 0);
+  }, [pathname]);
 
   const handleProceedToCheckout = () => {
     setIsCartOpen(false);
