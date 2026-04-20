@@ -18,7 +18,6 @@ interface AuthContextType {
   authMethod: AuthMethod;
   isGoogleUser: boolean;
   isPhoneUser: boolean;
-  // ADDED: profilePic to the login function signature
   login: (token: string, identifier: string, method?: AuthMethod, profilePic?: string) => void;
   logout: () => void;
   updateUser: (updates: Partial<User>) => void;
@@ -45,15 +44,22 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
     setLoading(false);
   }, []);
 
-  // ADDED: Accept profilePic here
   const login = (token: string, identifier: string, method: AuthMethod = "phone", profilePic?: string) => {
+    // 1. Determine exactly what the identifier is to prevent data leaks
+    const isEmail = identifier.includes("@");
+    // If it's mostly numbers/plus signs, it's a phone number. Otherwise, it's a name.
+    const isPhone = !isEmail && /^[\d\s\+\-\(\)]+$/.test(identifier);
+    const isName = !isEmail && !isPhone;
+
+    // 2. Map the data strictly to the correct fields
     const userData: User = {
-      email: identifier.includes("@") ? identifier : "",
-      fullName: identifier.includes("@") ? "" : identifier,
-      phone: identifier.includes("@") ? "" : identifier,
-      profilePic: profilePic || "", // ADDED: Store it immediately
+      email: isEmail ? identifier : "",
+      fullName: isName ? identifier : "", // Only saves here if it's actually a name
+      phone: isPhone ? identifier : "",   // Only saves here if it's actually a phone number
+      profilePic: profilePic || "", 
       authMethod: method,
     };
+
     localStorage.setItem("token", token);
     localStorage.setItem("userData", JSON.stringify(userData));
     localStorage.setItem("userEmail", identifier); // backward compat

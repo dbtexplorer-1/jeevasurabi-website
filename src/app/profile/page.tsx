@@ -2,11 +2,12 @@
 import React, { useState, useRef, useEffect } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
+import Image from "next/image"; // <--- ADD THIS LINE HERE
 import {
   User, Camera, Lock, Phone, Mail, Edit3, Save, X,
   Eye, EyeOff, ChevronLeft, CheckCircle2, AlertCircle,
   Loader2, Shield, Bell, Package, Heart, LogOut, Trash2,
-  RotateCcw, KeyRound, ArrowLeft,
+  RotateCcw, KeyRound, ArrowLeft, Calendar, ReceiptText, ExternalLink, MapPin
 } from "lucide-react";
 import { useAuth } from "@/context/AuthContext";
 
@@ -15,24 +16,55 @@ type SecurityView = "main" | "forgot-phone" | "forgot-otp" | "forgot-newpassword
 
 interface Toast { message: string; type: "success" | "error"; }
 
-const API_BASE = "http://192.168.0.101:8000";
+// --- Types matching the backend schema for Orders ---
+interface Product {
+  id: number;
+  name: string;
+  category: string;
+  size: string;
+  img: string;
+}
+
+interface OrderItem {
+  id: number;
+  product_id: number;
+  quantity: number;
+  price_at_purchase: number;
+  product: Product;
+}
+
+interface Order {
+  id: number;
+  total_amount: number;
+  status: string;
+  shipping_address: string;
+  created_at: string;
+  items: OrderItem[];
+}
+
+const API_BASE = typeof window !== "undefined" 
+  ? `http://${window.location.hostname}:8000` 
+  : "http://localhost:8000";
 
 export default function ProfilePage() {
-  const { user, isLoggedIn, loading, logout, updateUser, isGoogleUser, isPhoneUser } = useAuth();
+  const { user, isLoggedIn, loading, logout, updateUser, isGoogleUser } = useAuth();
   const router = useRouter();
 
   const [activeTab, setActiveTab] = useState<Tab>("profile");
   const [toast, setToast] = useState<Toast | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
+  // Profile States
   const [fullName, setFullName] = useState("");
   const [email, setEmail] = useState("");
   const [phone, setPhone] = useState("");
+  const [avatarPreview, setAvatarPreview] = useState<string | null>(null);
+  
   const [editingProfile, setEditingProfile] = useState(false);
   const [savingProfile, setSavingProfile] = useState(false);
-  const [avatarPreview, setAvatarPreview] = useState<string | null>(null);
-  const [isUploading, setIsUploading] = useState(false); // New state for file upload status
+  const [isUploading, setIsUploading] = useState(false);
 
+  // Security States
   const [currentPassword, setCurrentPassword] = useState("");
   const [newPassword, setNewPassword] = useState("");
   const [confirmPassword, setConfirmPassword] = useState("");
@@ -41,6 +73,7 @@ export default function ProfilePage() {
   const [showConfirmPw, setShowConfirmPw] = useState(false);
   const [savingPassword, setSavingPassword] = useState(false);
 
+  // Forgot Password States
   const [secView, setSecView] = useState<SecurityView>("main");
   const [fpPhone, setFpPhone] = useState("");
   const [fpOtp, setFpOtp] = useState("");
@@ -48,56 +81,89 @@ export default function ProfilePage() {
   const [fpLoading, setFpLoading] = useState(false);
   const [fpError, setFpError] = useState("");
 
+  // Orders State
+  const [orders, setOrders] = useState<Order[]>([]);
+  const [ordersLoading, setOrdersLoading] = useState(false);
+  const [ordersError, setOrdersError] = useState("");
+  const [ordersFetched, setOrdersFetched] = useState(false);
+
+  // Preferences States
   const [emailNotif, setEmailNotif] = useState(true);
   const [smsNotif, setSmsNotif] = useState(false);
   const [offerNotif, setOfferNotif] = useState(true);
 
+  // Fetch Profile Info
   useEffect(() => {
     const fetchProfile = async () => {
-      const token = localStorage.getItem("token");
+      const token = localStorage.getItem("token") || localStorage.getItem("access_token");
       if (!token) return;
       try {
         const res = await fetch(`${API_BASE}/me`, { headers: { Authorization: `Bearer ${token}` } });
         if (res.ok) {
           const data = await res.json();
-          updateUser({ fullName: data.full_name, email: data.email, phone: data.phone_number, profilePic: data.profile_pic });
           setFullName(data.full_name || "");
           setEmail(data.email || "");
           setPhone(data.phone_number || "");
           setAvatarPreview(data.profile_pic || null);
           if (data.phone_number) setFpPhone(data.phone_number);
+          
+          updateUser({ fullName: data.full_name, email: data.email, phone: data.phone_number, profilePic: data.profile_pic });
         }
       } catch (err) { console.error("Failed to fetch profile", err); }
     };
-    if (!loading && !isLoggedIn) router.push("/login");
-    else if (isLoggedIn) fetchProfile();
+
+    if (!loading && !isLoggedIn) {
+      router.push("/login");
+    } else if (isLoggedIn) {
+      fetchProfile();
+    }
   }, [loading, isLoggedIn, router]);
+
+  // Lazy Load Orders when Tab is clicked
+  useEffect(() => {
+    if (activeTab === "orders" && !ordersFetched && isLoggedIn) {
+      const fetchOrders = async () => {
+        setOrdersLoading(true);
+        try {
+          const token = localStorage.getItem("token") || localStorage.getItem("access_token");
+          const res = await fetch(`${API_BASE}/my-orders`, {
+            headers: { "Authorization": `Bearer ${token}` }
+          });
+          if (!res.ok) throw new Error("Failed to fetch orders");
+          const data = await res.json();
+          setOrders(data);
+          setOrdersFetched(true);
+        } catch (err: any) {
+          setOrdersError(err.message || "Failed to load orders");
+        } finally {
+          setOrdersLoading(false);
+        }
+      };
+      fetchOrders();
+    }
+  }, [activeTab, ordersFetched, isLoggedIn]);
 
   const showToast = (message: string, type: "success" | "error") => {
     setToast({ message, type });
     setTimeout(() => setToast(null), 3500);
   };
 
-  // --- UPDATED: HANDLE REAL FILE UPLOAD ---
   const handleAvatarChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
 
-    // 1. Client-side validation
     if (file.size > 2 * 1024 * 1024) { 
       showToast("Image must be smaller than 2MB", "error"); 
       return; 
     }
 
     setIsUploading(true);
-    const token = localStorage.getItem("token");
+    const token = localStorage.getItem("token") || localStorage.getItem("access_token");
 
     try {
-      // 2. Prepare Form Data
       const formData = new FormData();
       formData.append("file", file);
 
-      // 3. Upload to backend
       const res = await fetch(`${API_BASE}/upload-profile-pic`, {
         method: "POST",
         headers: { Authorization: `Bearer ${token}` },
@@ -107,7 +173,7 @@ export default function ProfilePage() {
       if (res.ok) {
         const data = await res.json();
         setAvatarPreview(data.profile_pic);
-        updateUser({ profilePic: data.profile_pic }); // Sync with Navbar
+        updateUser({ profilePic: data.profile_pic }); 
         showToast("Profile picture updated!", "success");
       } else {
         showToast("Failed to upload image", "error");
@@ -123,7 +189,7 @@ export default function ProfilePage() {
     if (!fullName.trim()) { showToast("Full name is required", "error"); return; }
     setSavingProfile(true);
     try {
-      const token = localStorage.getItem("token");
+      const token = localStorage.getItem("token") || localStorage.getItem("access_token");
       const res = await fetch(`${API_BASE}/profile`, {
         method: "PUT",
         headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
@@ -131,7 +197,7 @@ export default function ProfilePage() {
           full_name: fullName.toUpperCase(), 
           email, 
           phone_number: phone, 
-          profile_pic: avatarPreview // The persistent URL from the upload step
+          profile_pic: avatarPreview 
         }),
       });
       if (res.ok) {
@@ -152,7 +218,7 @@ export default function ProfilePage() {
     if (newPassword !== confirmPassword) { showToast("Passwords do not match", "error"); return; }
     setSavingPassword(true);
     try {
-      const token = localStorage.getItem("token");
+      const token = localStorage.getItem("token") || localStorage.getItem("access_token");
       const res = await fetch(`${API_BASE}/change-password`, {
         method: "POST",
         headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
@@ -165,8 +231,8 @@ export default function ProfilePage() {
     finally { setSavingPassword(false); }
   };
 
+  // Forgot Password Actions
   const fpGoTo = (v: SecurityView) => { setFpError(""); setSecView(v); };
-
   const handleFpSendOtp = async (e: React.FormEvent) => {
     e.preventDefault(); setFpLoading(true); setFpError("");
     try {
@@ -181,11 +247,9 @@ export default function ProfilePage() {
     } catch { setFpError("Could not reach server. Try again."); }
     finally { setFpLoading(false); }
   };
-
   const handleFpVerifyOtp = async (e: React.FormEvent) => {
     e.preventDefault();
     if (fpOtp.length !== 6) { setFpError("Enter the 6-digit code"); return; }
-    
     setFpLoading(true); setFpError("");
     try {
       const res = await fetch(`${API_BASE}/forgot-password/verify-otp`, {
@@ -194,17 +258,11 @@ export default function ProfilePage() {
         body: JSON.stringify({ phone_number: fpPhone, otp_code: fpOtp }),
       });
       const data = await res.json();
-      
-      if (res.ok) {
-        setFpError(""); 
-        fpGoTo("forgot-newpassword");
-      } else {
-        setFpError(data.detail || "Invalid OTP");
-      }
+      if (res.ok) { setFpError(""); fpGoTo("forgot-newpassword"); }
+      else setFpError(data.detail || "Invalid OTP");
     } catch { setFpError("Could not reach server. Try again."); }
     finally { setFpLoading(false); }
   };
-
   const handleFpReset = async (e: React.FormEvent) => {
     e.preventDefault();
     const passwordRegex = /^(?=.*[A-Za-z])(?=.*\d).{8,16}$/;
@@ -226,9 +284,29 @@ export default function ProfilePage() {
     finally { setFpLoading(false); }
   };
 
+  // Helper Functions
   const getInitials = () => {
     const n = fullName || user?.fullName || "USER";
     return n.split(" ").map((w: string) => w[0]).join("").toUpperCase().slice(0, 2);
+  };
+  
+  const formatDate = (dateString: string) => {
+    const options: Intl.DateTimeFormatOptions = { 
+      year: 'numeric', month: 'short', day: 'numeric', 
+      hour: '2-digit', minute: '2-digit'
+    };
+    return new Date(dateString).toLocaleDateString('en-IN', options);
+  };
+
+  const getStatusColor = (status: string) => {
+    switch (status.toLowerCase()) {
+      case "pending": return "bg-amber-100 text-amber-800 border-amber-200";
+      case "processing": return "bg-blue-100 text-blue-800 border-blue-200";
+      case "shipped": return "bg-purple-100 text-purple-800 border-purple-200";
+      case "delivered": return "bg-green-100 text-green-800 border-green-200";
+      case "cancelled": return "bg-red-100 text-red-800 border-red-200";
+      default: return "bg-gray-100 text-gray-800 border-gray-200";
+    }
   };
 
   const passwordStrength = (pw: string) => {
@@ -270,6 +348,7 @@ export default function ProfilePage() {
         </div>
       )}
 
+      {/* HEADER SECTION */}
       <div className="bg-green-900 text-white">
         <div className="max-w-5xl mx-auto px-6 py-8">
           <Link href="/" className="inline-flex items-center gap-2 text-green-300 hover:text-white transition-colors text-xs font-bold uppercase tracking-widest mb-8">
@@ -306,7 +385,7 @@ export default function ProfilePage() {
             </div>
             <div className="text-center sm:text-left pb-1">
               <h1 className="text-2xl font-serif font-bold uppercase tracking-wide">{fullName || user?.fullName || "MEMBER"}</h1>
-              <p className="text-green-300 text-sm mt-0.5">{email || phone || "MEMBER"}</p>
+              <p className="text-green-300 text-sm mt-0.5">{email || phone || user?.email || user?.phone || "MEMBER"}</p>
               {isGoogleUser && (
                 <span className="inline-flex items-center gap-1 mt-1 text-[10px] font-bold uppercase tracking-widest bg-white/10 text-green-200 px-2 py-1 rounded-full">
                   Google Account
@@ -332,6 +411,7 @@ export default function ProfilePage() {
 
       <div className="max-w-5xl mx-auto px-6 py-10">
 
+        {/* PROFILE TAB */}
         {activeTab === "profile" && (
           <div className="bg-white rounded-3xl shadow-sm border border-gray-100 overflow-hidden">
             <div className="flex items-center justify-between p-8 border-b border-gray-100">
@@ -600,20 +680,104 @@ export default function ProfilePage() {
           </div>
         )}
 
-        {/* ORDERS TAB */}
+        {/* ORDERS TAB INTEGRATION */}
         {activeTab === "orders" && (
            <div className="bg-white rounded-3xl shadow-sm border border-gray-100 overflow-hidden">
              <div className="p-8 border-b border-gray-100">
                <h2 className="text-xl font-bold text-gray-900 uppercase">My Orders</h2>
-               <p className="text-gray-500 text-sm mt-0.5">Track and manage your purchases</p>
+               <p className="text-gray-500 text-sm mt-0.5">Track and review your previous purchases</p>
              </div>
-             <div className="flex flex-col items-center justify-center py-24 px-8 text-center">
-               <div className="w-20 h-20 bg-gray-100 rounded-full flex items-center justify-center mb-6">
-                 <Package size={32} className="text-gray-300" />
-               </div>
-               <h3 className="text-lg font-bold text-gray-900 mb-2 uppercase">No orders yet</h3>
-               <p className="text-gray-500 text-sm mb-8 max-w-xs">When you place an order, it will appear here.</p>
-               <Link href="/shop" className="bg-green-900 text-white px-8 py-3.5 rounded-xl font-bold text-sm hover:bg-green-800 uppercase tracking-widest">Start Shopping</Link>
+
+             <div className="p-6 md:p-8 bg-gray-50/30">
+               {ordersLoading ? (
+                 <div className="flex flex-col items-center justify-center py-16">
+                   <Loader2 className="animate-spin text-green-900 mb-4" size={32} />
+                   <p className="text-gray-500 text-sm font-bold uppercase tracking-widest">Loading Orders...</p>
+                 </div>
+               ) : ordersError ? (
+                 <div className="flex flex-col items-center justify-center py-16 text-center">
+                   <AlertCircle className="text-red-500 mb-4" size={32} />
+                   <p className="text-gray-800 font-bold mb-2">{ordersError}</p>
+                   <button onClick={() => setOrdersFetched(false)} className="text-green-900 underline text-xs font-bold uppercase">Try Again</button>
+                 </div>
+               ) : orders.length === 0 ? (
+                 <div className="flex flex-col items-center justify-center py-16 text-center">
+                   <div className="w-20 h-20 bg-white shadow-sm border border-gray-100 rounded-full flex items-center justify-center mb-6">
+                     <ReceiptText size={32} className="text-gray-300" />
+                   </div>
+                   <h3 className="text-lg font-bold text-gray-900 mb-2 uppercase">No orders yet</h3>
+                   <p className="text-gray-500 text-sm mb-8 max-w-xs">When you place an order, it will securely appear right here.</p>
+                   <Link href="/shop" className="bg-green-900 text-white px-8 py-3.5 rounded-xl font-bold text-sm hover:bg-green-800 uppercase tracking-widest">Start Shopping</Link>
+                 </div>
+               ) : (
+                 <div className="space-y-6">
+                   {orders.map((order) => (
+                     <div key={order.id} className="bg-white rounded-2xl shadow-sm border border-gray-100 overflow-hidden group hover:border-green-900/30 transition-colors">
+                       {/* Order Header */}
+                       <div className="bg-gray-50 p-5 md:p-6 border-b border-gray-100 flex flex-col md:flex-row md:items-center justify-between gap-4">
+                         <div className="grid grid-cols-2 md:flex md:gap-10 gap-y-4 text-sm">
+                           <div>
+                             <p className="text-gray-400 font-bold uppercase tracking-widest text-[10px] mb-1 flex items-center gap-1"><ReceiptText size={12}/> Order ID</p>
+                             <p className="font-black text-gray-900">#ORD-{order.id.toString().padStart(4, '0')}</p>
+                           </div>
+                           <div>
+                             <p className="text-gray-400 font-bold uppercase tracking-widest text-[10px] mb-1 flex items-center gap-1"><Calendar size={12}/> Date Placed</p>
+                             <p className="font-bold text-gray-900">{formatDate(order.created_at)}</p>
+                           </div>
+                           <div className="col-span-2 md:col-span-1">
+                             <p className="text-gray-400 font-bold uppercase tracking-widest text-[10px] mb-1">Total Amount</p>
+                             <p className="font-black text-green-900 text-lg">₹{order.total_amount}</p>
+                           </div>
+                         </div>
+                         <div className="flex items-center justify-between md:justify-end gap-4 mt-2 md:mt-0 pt-4 md:pt-0 border-t border-gray-200 md:border-0">
+                           <span className={`px-4 py-1.5 rounded-full text-[10px] font-black uppercase tracking-widest border ${getStatusColor(order.status)}`}>
+                             {order.status}
+                           </span>
+                         </div>
+                       </div>
+
+                       {/* Order Items */}
+                       <div className="p-5 md:p-6 space-y-4">
+                         {order.items.map((item, index) => (
+                           <div key={index} className="flex items-center gap-4 border-b border-gray-50 pb-4 last:border-0 last:pb-0">
+                             <div className="relative w-16 h-16 md:w-20 md:h-20 rounded-xl overflow-hidden border border-gray-100 bg-gray-50 shrink-0">
+                               <Image src={item.product.img} alt={item.product.name} fill className="object-cover" />
+                             </div>
+                             <div className="flex-1">
+                               <h4 className="font-serif text-sm md:text-base text-gray-900 font-bold">{item.product.name}</h4>
+                               <div className="flex flex-wrap items-center gap-x-3 gap-y-1 mt-1">
+                                 <p className="text-[10px] text-amber-700 bg-amber-50 px-2 py-0.5 rounded font-bold uppercase">{item.product.size}</p>
+                                 <p className="text-gray-500 text-xs">Qty: <span className="font-bold text-gray-900">{item.quantity}</span></p>
+                               </div>
+                             </div>
+                             <div className="text-right shrink-0">
+                               <p className="font-bold text-gray-900">₹{item.price_at_purchase * item.quantity}</p>
+                               <p className="text-[10px] text-gray-400 mt-1">₹{item.price_at_purchase} each</p>
+                             </div>
+                           </div>
+                         ))}
+                       </div>
+
+                       {/* Shipping Footer */}
+                       <div className="bg-gray-50/50 p-5 border-t border-gray-100 flex flex-col md:flex-row gap-4">
+                         <div className="flex-1">
+                           <p className="text-gray-400 font-bold uppercase tracking-widest text-[10px] mb-1 flex items-center gap-1">
+                             <MapPin size={12} className="text-green-900" /> Shipping Address
+                           </p>
+                           <p className="text-xs font-medium text-gray-700 leading-relaxed">
+                             {order.shipping_address}
+                           </p>
+                         </div>
+                         <div className="shrink-0 flex items-end">
+                           <Link href={`/shop`} className="text-[10px] font-bold text-green-900 uppercase tracking-widest hover:text-green-700 flex items-center gap-1 transition-colors">
+                             Buy Again <ExternalLink size={12} />
+                           </Link>
+                         </div>
+                       </div>
+                     </div>
+                   ))}
+                 </div>
+               )}
              </div>
            </div>
         )}

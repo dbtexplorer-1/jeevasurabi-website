@@ -5,7 +5,8 @@ import { usePathname } from 'next/navigation';
 import Image from 'next/image';
 import { 
   ShoppingCart, User, Menu, X, Heart, LogOut, 
-  Package, Settings, UserCircle, ChevronRight, LogIn 
+  Package, Settings, UserCircle, ChevronRight, LogIn,
+  ShieldCheck, LayoutDashboard 
 } from 'lucide-react';
 import { useAuth } from '@/context/AuthContext';
 
@@ -23,7 +24,11 @@ export default function Navbar({ cartCount, wishlistCount, onOpenCart, onOpenWis
   const [showProfileMenu, setShowProfileMenu] = useState(false);
   const menuRef = useRef<HTMLDivElement>(null);
   
+  // Destructure user to check for admin status
   const { isLoggedIn, user, logout } = useAuth();
+  
+  // Robust check for admin status (checks property from DB/Context)
+  const isAdmin = isLoggedIn && (user as any)?.is_admin === true;
 
   useEffect(() => {
     function handleClickOutside(event: MouseEvent) {
@@ -43,7 +48,6 @@ export default function Navbar({ cartCount, wishlistCount, onOpenCart, onOpenWis
   const mobileActiveStyles = (path: string) =>
     pathname === path ? "text-green-900 font-black" : "text-gray-700";
 
-  // Helper function to get initials for the avatar fallback
   const getInitials = () => {
     const name = user?.fullName || user?.email || "MEMBER";
     return name
@@ -67,7 +71,6 @@ export default function Navbar({ cartCount, wishlistCount, onOpenCart, onOpenWis
 
         <div className="flex items-center">
           <Link href="/">
-            {/* UPDATED: Increased width, height, and Tailwind scaling classes (h-10 md:h-14) */}
             <Image 
               src="/icon.png" 
               alt="Jeevasurabi Logo" 
@@ -87,6 +90,19 @@ export default function Navbar({ cartCount, wishlistCount, onOpenCart, onOpenWis
         </div>
 
         <div className="flex items-center space-x-4 md:space-x-8 text-white relative">
+          
+          {/* NEW: ADMIN ICON (Only visible if isAdmin is true) */}
+          {isAdmin && (
+            <Link 
+              href="/admin" 
+              className="relative hover:text-amber-400 transition-all hover:scale-110 flex flex-col items-center group"
+              title="Admin Dashboard"
+            >
+              <ShieldCheck className="w-6 h-6 md:w-8 md:h-8" strokeWidth={1.5} />
+              <span className="absolute -bottom-5 text-[8px] font-black uppercase tracking-tighter opacity-0 group-hover:opacity-100 transition-opacity whitespace-nowrap">Admin</span>
+            </Link>
+          )}
+
           <button onClick={onOpenWishlist} className="relative hover:text-green-200 transition-transform hover:scale-110">
             <Heart className="w-6 h-6 md:w-8 md:h-8" strokeWidth={1.5} />
             {wishlistCount > 0 && (
@@ -132,11 +148,14 @@ export default function Navbar({ cartCount, wishlistCount, onOpenCart, onOpenWis
               <div className="absolute right-0 mt-4 w-72 bg-white rounded-[2rem] shadow-2xl border border-gray-100 overflow-hidden animate-in fade-in zoom-in-95 duration-200 text-gray-900">
                 <div className="p-6 bg-gray-50 border-b border-gray-100">
                   {isLoggedIn ? (
-                    <div>
-                      <p className="text-[10px] uppercase tracking-widest text-gray-400 font-bold mb-1">Welcome Back</p>
-                      <p className="text-sm font-black text-green-900 truncate uppercase">
-                        {user?.fullName || user?.email || "MEMBER"}
-                      </p>
+                    <div className="flex justify-between items-start">
+                      <div>
+                        <p className="text-[10px] uppercase tracking-widest text-gray-400 font-bold mb-1">Welcome Back</p>
+                        <p className="text-sm font-black text-green-900 truncate uppercase">
+                          {user?.fullName || user?.email || "MEMBER"}
+                        </p>
+                      </div>
+                      {isAdmin && <span className="bg-amber-100 text-amber-700 text-[8px] font-black px-2 py-0.5 rounded-full uppercase border border-amber-200">Admin</span>}
                     </div>
                   ) : (
                     <div>
@@ -149,6 +168,17 @@ export default function Navbar({ cartCount, wishlistCount, onOpenCart, onOpenWis
                 <div className="p-4 space-y-1">
                   {isLoggedIn ? (
                     <>
+                      {/* NEW: Admin Link in dropdown */}
+                      {isAdmin && (
+                        <Link href="/admin" onClick={() => setShowProfileMenu(false)} className="flex items-center justify-between p-4 rounded-2xl bg-amber-50 hover:bg-amber-100 transition-colors group border border-amber-100/50 mb-2">
+                          <div className="flex items-center gap-3">
+                            <LayoutDashboard size={20} className="text-amber-600" />
+                            <span className="text-sm font-black text-amber-700 uppercase">Admin Dashboard</span>
+                          </div>
+                          <ChevronRight size={14} className="text-amber-400" />
+                        </Link>
+                      )}
+
                       <Link href="/profile" onClick={() => setShowProfileMenu(false)} className="flex items-center justify-between p-4 rounded-2xl hover:bg-green-50 transition-colors group">
                         <div className="flex items-center gap-3">
                           <UserCircle size={20} className="text-gray-400 group-hover:text-green-700" />
@@ -203,6 +233,8 @@ export default function Navbar({ cartCount, wishlistCount, onOpenCart, onOpenWis
         <div className="lg:hidden bg-white border-t border-gray-100 p-8 flex flex-col space-y-8 font-bold text-gray-700 uppercase text-sm tracking-[0.25em] animate-in slide-in-from-top duration-300 shadow-xl">
           <Link href="/" onClick={() => setIsMenuOpen(false)} className={mobileActiveStyles('/')}>Home</Link>
           <Link href="/shop" onClick={() => setIsMenuOpen(false)} className={mobileActiveStyles('/shop')}>Shop</Link>
+          {/* Mobile Admin Link */}
+          {isAdmin && <Link href="/admin" onClick={() => setIsMenuOpen(false)} className="text-amber-600 font-black">Admin Panel</Link>}
           <Link href="/about" onClick={() => setIsMenuOpen(false)} className={mobileActiveStyles('/about')}>About</Link>
           <Link href="/contact" onClick={() => setIsMenuOpen(false)} className={mobileActiveStyles('/contact')}>Contact Us</Link>
         </div>

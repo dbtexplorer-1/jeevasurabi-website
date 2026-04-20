@@ -1,12 +1,16 @@
 "use client";
-import React, { createContext, useContext, useState } from 'react';
+import React, { createContext, useContext, useState, useEffect } from 'react';
 
-interface Product {
+// UPDATED: Added stock_quantity, category, and description to match your database
+export interface Product {
   id: number;
   name: string;
+  category: string;
+  size: string;
   price: number;
   img: string;
-  size: string;
+  stock_quantity: number;
+  description?: string;
 }
 
 interface WishlistContextType {
@@ -14,12 +18,34 @@ interface WishlistContextType {
   toggleWishlist: (product: Product) => void;
   isInWishlist: (id: number) => boolean;
   wishlistCount: number;
+  clearWishlist: () => void;
 }
 
 const WishlistContext = createContext<WishlistContextType | undefined>(undefined);
 
 export function WishlistProvider({ children }: { children: React.ReactNode }) {
   const [wishlist, setWishlist] = useState<Product[]>([]);
+  const [isInitialized, setIsInitialized] = useState(false);
+
+  // NEW: Load wishlist from local storage when the app starts
+  useEffect(() => {
+    const savedWishlist = localStorage.getItem("wishlistData");
+    if (savedWishlist) {
+      try {
+        setWishlist(JSON.parse(savedWishlist));
+      } catch (e) {
+        console.error("Failed to parse wishlist data", e);
+      }
+    }
+    setIsInitialized(true);
+  }, []);
+
+  // NEW: Save wishlist to local storage whenever it changes
+  useEffect(() => {
+    if (isInitialized) {
+      localStorage.setItem("wishlistData", JSON.stringify(wishlist));
+    }
+  }, [wishlist, isInitialized]);
 
   const toggleWishlist = (product: Product) => {
     const exists = wishlist.some((item) => item.id === product.id);
@@ -39,9 +65,12 @@ export function WishlistProvider({ children }: { children: React.ReactNode }) {
 
   const isInWishlist = (id: number) => wishlist.some((item) => item.id === id);
   const wishlistCount = wishlist.length;
+  
+  // Extra helper function just in case you ever want a "Clear Wishlist" button
+  const clearWishlist = () => setWishlist([]);
 
   return (
-    <WishlistContext.Provider value={{ wishlist, toggleWishlist, isInWishlist, wishlistCount }}>
+    <WishlistContext.Provider value={{ wishlist, toggleWishlist, isInWishlist, wishlistCount, clearWishlist }}>
       {children}
     </WishlistContext.Provider>
   );

@@ -7,8 +7,13 @@ import { useAuth } from "@/context/AuthContext";
 import { useCart } from "@/context/CartContext";
 import {
   ChevronRight, ArrowLeft, MapPin, CreditCard,
-  CheckCircle2, ShoppingBag, ShieldCheck, Loader2, Truck, Package, ClipboardList
+  CheckCircle2, ShoppingBag, ShieldCheck, Loader2, Truck, Package, ClipboardList, Check
 } from "lucide-react";
+
+// Dynamically determine the API base URL
+const API_BASE = typeof window !== "undefined" 
+  ? `http://${window.location.hostname}:8000` 
+  : "http://localhost:8000";
 
 type CheckoutStep = "shipping" | "summary" | "payment";
 
@@ -19,6 +24,9 @@ export default function CheckoutPage() {
 
   const [step, setStep] = useState<CheckoutStep>("shipping");
   const [isProcessing, setIsProcessing] = useState(false);
+  const [orderPlaced, setOrderPlaced] = useState(false); 
+  const [countdown, setCountdown] = useState(10); // NEW: 10 second countdown
+  const [error, setError] = useState("");
 
   const [shippingInfo, setShippingInfo] = useState({
     firstName: "",
@@ -32,52 +40,34 @@ export default function CheckoutPage() {
   });
 
   // ==========================================
-  // UPDATED COURIER CHARGE LOGIC
+  // COURIER CHARGE LOGIC
   // ==========================================
 
   const totalWeightGrams = cart.reduce((total, item) => {
     let itemWeight = 0;
     const sizeStr = (item.size || "").toLowerCase();
-    
-    // Extract the number from strings like "500ml", "1L", "250g"
     const numericValue = parseFloat(sizeStr.replace(/[^\d.]/g, '')) || 0;
 
     if (sizeStr.includes('ml') || sizeStr.includes('g')) {
-      itemWeight = numericValue; // 500ml = 500g
+      itemWeight = numericValue;
     } else if (sizeStr.includes('l') || sizeStr.includes('kg')) {
-      itemWeight = numericValue * 1000; // 1L = 1000g
+      itemWeight = numericValue * 1000;
     } else {
-      itemWeight = 1000; // Default fallback if format is unknown
+      itemWeight = 1000; 
     }
 
-    // IMPORTANT: Add 150g per item for the bottle and packing material weight
     const packagingBuffer = 150; 
     return total + ((itemWeight + packagingBuffer) * item.quantity);
   }, 0);
 
   const getShippingFee = (state: string, weightGrams: number) => {
     if (!state || weightGrams <= 0) return 0;
-
     const southIndia = ["Kerala", "Karnataka", "Andhra Pradesh", "Telangana", "Puducherry"];
-
-    // Rule 1: Within Tamil Nadu (rs 25 for every 1000g)
-    if (state === "Tamil Nadu") {
-      return Math.ceil(weightGrams / 1000) * 25;
-    }
-
-    // Rule 2: South India excluding TN (rs 50 for every 1000g)
-    if (southIndia.includes(state)) {
-      return Math.ceil(weightGrams / 1000) * 50;
-    }
-
-    // Rule 3: Rest of India
-    if (weightGrams <= 5000) {
-      return 320; // Up to 5000g = rs 320 flat
-    } else {
-      // Rule 4: Above 5000g in ROI (rs 60 extra for every 1000g)
-      const extraWeight = weightGrams - 5000;
-      return 320 + (Math.ceil(extraWeight / 1000) * 60);
-    }
+    if (state === "Tamil Nadu") return Math.ceil(weightGrams / 1000) * 25;
+    if (southIndia.includes(state)) return Math.ceil(weightGrams / 1000) * 50;
+    if (weightGrams <= 5000) return 320; 
+    const extraWeight = weightGrams - 5000;
+    return 320 + (Math.ceil(extraWeight / 1000) * 60);
   };
 
   const shippingFee = getShippingFee(shippingInfo.state, totalWeightGrams);
@@ -97,6 +87,16 @@ export default function CheckoutPage() {
     }
   }, [user]);
 
+  // NEW: 10-Second Auto Redirect Effect
+  useEffect(() => {
+    if (orderPlaced && countdown > 0) {
+      const timer = setTimeout(() => setCountdown(countdown - 1), 1000);
+      return () => clearTimeout(timer);
+    } else if (orderPlaced && countdown === 0) {
+      router.push("/shop");
+    }
+  }, [orderPlaced, countdown, router]);
+
   if (loading) {
     return (
       <div className="min-h-screen flex items-center justify-center bg-[#f5f4f0]">
@@ -107,7 +107,7 @@ export default function CheckoutPage() {
 
   if (!isLoggedIn) return null;
 
-  if (cart.length === 0 && step !== "payment") {
+  if (cart.length === 0 && step !== "payment" && !orderPlaced) {
     return (
       <div className="min-h-screen bg-[#f5f4f0] flex flex-col items-center justify-center p-6 text-center">
         <div className="w-24 h-24 bg-white rounded-full flex items-center justify-center mb-6 shadow-sm border border-gray-100">
@@ -128,12 +128,46 @@ export default function CheckoutPage() {
     window.scrollTo(0, 0);
   };
 
-  const handleRazorpayPayment = async () => {
+  const handlePlaceOrder = async () => {
     setIsProcessing(true);
-    setTimeout(() => {
+    setError("");
+
+    try {
+      const token = localStorage.getItem("token");
+      if (!token) throw new Error("Authentication error. Please log in again.");
+
+      const fullAddress = `${shippingInfo.firstName} ${shippingInfo.lastName}, ${shippingInfo.address}, ${shippingInfo.apartment ? shippingInfo.apartment + ', ' : ''}${shippingInfo.city}, ${shippingInfo.state} - ${shippingInfo.pincode}. Phone: ${shippingInfo.phone}`;
+
+      const orderItems = cart.map(item => ({
+        product_id: item.id,
+        quantity: item.quantity
+      }));
+
+      const res = await fetch(`${API_BASE}/orders`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          "Authorization": `Bearer ${token}`
+        },
+        body: JSON.stringify({
+          shipping_address: fullAddress,
+          items: orderItems
+        })
+      });
+
+      if (!res.ok) {
+        const errorData = await res.json();
+        throw new Error(errorData.detail || "Failed to place order");
+      }
+
+      // Success! Trigger the animation, countdown handles redirect
+      setOrderPlaced(true);
+      clearCart();
+
+    } catch (err: any) {
+      setError(err.message || "An error occurred while placing the order.");
       setIsProcessing(false);
-      alert(`Razorpay integration pending!\nTotal Package Weight: ${(totalWeightGrams/1000).toFixed(2)}kg\nShipping Fee: ₹${shippingFee}\nFinal Amount: ₹${finalTotal}`);
-    }, 1500);
+    }
   };
 
   const Stepper = () => (
@@ -158,9 +192,97 @@ export default function CheckoutPage() {
   );
 
   return (
-    <div className="min-h-screen bg-[#f5f4f0] py-8 md:py-12 px-4">
+    <div className="min-h-screen bg-[#f5f4f0] py-8 md:py-12 px-4 relative overflow-hidden">
+      
+      {/* ========================================== */}
+      {/* UPDATED: SUCCESS ANIMATION OVERLAY */}
+      {/* ========================================== */}
+      {orderPlaced && (
+        <div className="fixed inset-0 z-[100] flex flex-col items-center justify-center bg-green-900 transition-all duration-500">
+          <style>{`
+            @keyframes popIn {
+              0% { transform: scale(0); opacity: 0; }
+              60% { transform: scale(1.1); opacity: 1; }
+              100% { transform: scale(1); opacity: 1; }
+            }
+            @keyframes checkBounce {
+              0% { transform: scale(0); }
+              50% { transform: scale(1.4); }
+              100% { transform: scale(1); }
+            }
+            @keyframes fadeInUp {
+              0% { opacity: 0; transform: translateY(20px); }
+              100% { opacity: 1; transform: translateY(0); }
+            }
+            @keyframes popperLeft {
+              0% { transform: translate(0, 0) scale(0); opacity: 1; }
+              100% { transform: translate(-100px, -100px) scale(1.5) rotate(-45deg); opacity: 0; }
+            }
+            @keyframes popperRight {
+              0% { transform: translate(0, 0) scale(0); opacity: 1; }
+              100% { transform: translate(100px, -100px) scale(1.5) rotate(45deg); opacity: 0; }
+            }
+            @keyframes popperTop {
+              0% { transform: translate(0, 0) scale(0); opacity: 1; }
+              100% { transform: translate(0, -120px) scale(1.5); opacity: 0; }
+            }
+          `}</style>
+          
+          <div className="relative flex items-center justify-center" style={{ animation: 'popIn 0.6s cubic-bezier(0.175, 0.885, 0.32, 1.275) forwards' }}>
+            {/* Confetti / Poppers */}
+            <div className="absolute w-4 h-4 bg-yellow-400 rounded-full" style={{ animation: 'popperLeft 1s ease-out forwards 0.2s', opacity: 0 }}></div>
+            <div className="absolute w-4 h-4 bg-white rounded-full" style={{ animation: 'popperRight 1s ease-out forwards 0.2s', opacity: 0 }}></div>
+            <div className="absolute w-4 h-4 bg-green-400 rounded-full" style={{ animation: 'popperTop 1s ease-out forwards 0.2s', opacity: 0 }}></div>
+            <div className="absolute w-3 h-3 bg-white rounded-sm" style={{ animation: 'popperLeft 1.2s ease-out forwards 0.3s', opacity: 0 }}></div>
+            <div className="absolute w-3 h-3 bg-yellow-500 rounded-sm" style={{ animation: 'popperRight 1.2s ease-out forwards 0.3s', opacity: 0 }}></div>
+            
+            {/* Main Tick Circle */}
+            <div className="w-32 h-32 md:w-40 md:h-40 bg-white rounded-full flex items-center justify-center shadow-2xl z-10">
+              <Check 
+                size={80} 
+                strokeWidth={4} 
+                className="text-green-900" 
+                style={{ animation: 'checkBounce 0.5s cubic-bezier(0.175, 0.885, 0.32, 1.275) forwards 0.3s', transform: 'scale(0)' }} 
+              />
+            </div>
+          </div>
+          
+          <h2 
+            className="text-white text-3xl md:text-4xl font-black mt-8 text-center uppercase tracking-widest"
+            style={{ animation: 'fadeInUp 0.6s ease-out forwards 0.5s', opacity: 0 }}
+          >
+            Order Placed!
+          </h2>
+
+          <div 
+            className="flex flex-col sm:flex-row gap-4 mt-8 px-6 w-full max-w-md"
+            style={{ animation: 'fadeInUp 0.6s ease-out forwards 0.7s', opacity: 0 }}
+          >
+             <button 
+                onClick={() => router.push("/shop")} 
+                className="flex-1 bg-white text-green-900 px-6 py-4 rounded-xl font-bold text-sm uppercase tracking-widest hover:bg-gray-100 transition-colors shadow-lg text-center"
+             >
+               Continue Shopping
+             </button>
+             <button 
+                onClick={() => router.push("/profile")} 
+                className="flex-1 bg-transparent border-2 border-white/30 text-white px-6 py-4 rounded-xl font-bold text-sm uppercase tracking-widest hover:bg-white/10 transition-colors text-center"
+             >
+               View My Orders
+             </button>
+          </div>
+          
+          <p 
+            className="text-green-200/80 mt-8 text-xs font-bold uppercase tracking-wider"
+            style={{ animation: 'fadeInUp 0.6s ease-out forwards 0.9s', opacity: 0 }}
+          >
+            Redirecting to shop in {countdown} seconds...
+          </p>
+        </div>
+      )}
+
+      {/* Main Content */}
       <div className="max-w-4xl mx-auto">
-        
         <div className="flex items-center justify-between mb-8">
           <Link href="/shop" className="text-[10px] font-bold uppercase tracking-widest text-gray-500 hover:text-green-900 transition-colors flex items-center gap-1">
             <ArrowLeft size={14} /> Back to Shop
@@ -343,20 +465,26 @@ export default function CheckoutPage() {
                   <p className="text-5xl font-black text-green-900">₹{finalTotal}</p>
                 </div>
 
+                {error && (
+                  <div className="mb-6 bg-red-50 border border-red-200 text-red-600 px-4 py-3 rounded-xl text-sm font-bold text-left">
+                    {error}
+                  </div>
+                )}
+
                 <button 
-                  onClick={handleRazorpayPayment}
+                  onClick={handlePlaceOrder}
                   disabled={isProcessing}
-                  className="w-full bg-[#3399cc] text-white py-5 rounded-2xl font-bold text-lg uppercase tracking-widest hover:bg-[#2b82ad] transition-all shadow-xl disabled:opacity-70 flex items-center justify-center gap-3"
+                  className="w-full bg-green-900 text-white py-5 rounded-2xl font-bold text-lg uppercase tracking-widest hover:bg-green-800 transition-all shadow-xl disabled:opacity-70 flex items-center justify-center gap-3"
                 >
                   {isProcessing ? (
-                    <><Loader2 className="animate-spin" size={24} /> Connecting to Razorpay...</>
+                    <><Loader2 className="animate-spin" size={24} /> Processing...</>
                   ) : (
-                    <>Pay with Razorpay</>
+                    <>Place Order</>
                   )}
                 </button>
 
                 <div className="mt-8">
-                  <button onClick={() => setStep("summary")} className="text-xs font-bold text-gray-400 hover:text-green-900 uppercase tracking-widest transition-colors">
+                  <button onClick={() => setStep("summary")} disabled={isProcessing} className="text-xs font-bold text-gray-400 hover:text-green-900 uppercase tracking-widest transition-colors disabled:opacity-50">
                     Back to Summary
                   </button>
                 </div>

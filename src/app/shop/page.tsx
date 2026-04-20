@@ -9,6 +9,11 @@ import {
 import { useCart } from '@/context/CartContext';
 import { useWishlist } from '@/context/WishlistContext';
 
+// Dynamically determine the API base URL to prevent Network/CORS errors
+const API_BASE = typeof window !== "undefined" 
+  ? `http://${window.location.hostname}:8000` 
+  : "http://localhost:8000";
+
 interface Product {
   id: number;
   name: string;
@@ -47,7 +52,8 @@ export default function ShopPage() {
     const fetchProducts = async () => {
       try {
         setLoading(true);
-        const res = await fetch("http://192.168.0.101:8000/products");
+        // UPDATED: Using the dynamic API_BASE instead of the hardcoded IP
+        const res = await fetch(`${API_BASE}/products`);
         if (!res.ok) throw new Error("Failed to fetch products");
         const data = await res.json();
         setProducts(data);

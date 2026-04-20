@@ -1,44 +1,48 @@
-from fastapi import FastAPI, Depends, HTTPException, status, File, UploadFile
+from fastapi import FastAPI, Depends, HTTPException, status, File, UploadFile, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.security import OAuth2PasswordRequestForm, OAuth2PasswordBearer
-from fastapi.staticfiles import StaticFiles # NEW: For serving images
+from fastapi.staticfiles import StaticFiles 
 from sqlalchemy.orm import Session
 from typing import List, Optional
 from datetime import datetime, timedelta, timezone
 from jose import JWTError, jwt
 from pydantic import BaseModel
-import shutil # NEW: For saving files
-import os # NEW: For directory handling
-import uuid # NEW: For unique filenames
+import shutil 
+import os 
+import uuid 
 
 import models
 import auth
 from database import engine, get_db
+
+# ==========================================
+# 1. SETUP & MIDDLEWARE
+# ==========================================
 
 # Create DB tables
 models.Base.metadata.create_all(bind=engine)
 
 app = FastAPI(title="JeevaSurabi E-commerce API")
 
-# --- SETUP UPLOADS DIRECTORY ---
+# Setup uploads directory
 UPLOAD_DIR = "uploads"
 if not os.path.exists(UPLOAD_DIR):
     os.makedirs(UPLOAD_DIR)
 
-# NEW: Mount the uploads folder so it's accessible via URL
+# Mount the uploads folder
 app.mount("/uploads", StaticFiles(directory=UPLOAD_DIR), name="uploads")
 
+# CORS Middleware
 app.add_middleware(
     CORSMiddleware,
-    # Updated origins to include your local network IP and localhost
-    allow_origins=["http://localhost:3000", "http://192.168.0.101:3000"], 
+    allow_origin_regex=r"http://(?:localhost|127\.0\.0\.1|192\.168\.\d+\.\d+):3000",
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
 )
 
 # ==========================================
-# JWT / PROTECTED ROUTE DEPENDENCY
+# 2. DEPENDENCIES (Auth & Security)
 # ==========================================
 
 oauth2_scheme = OAuth2PasswordBearer(tokenUrl="login")
@@ -69,9 +73,19 @@ def get_current_user(
         raise credentials_exception
     return user
 
+def verify_admin_network(request: Request, current_user: models.UserDB = Depends(get_current_user)):
+    if not current_user.is_admin:
+        raise HTTPException(status_code=403, detail="Not authorized. Admin access required.")
+    
+    client_ip = request.client.host
+    if not (client_ip in ["127.0.0.1", "::1", "localhost"] or client_ip.startswith("192.168.")):
+        raise HTTPException(status_code=403, detail="Admin access denied from external networks.")
+        
+    return current_user
+
 
 # ==========================================
-# PYDANTIC SCHEMAS
+# 3. PYDANTIC SCHEMAS
 # ==========================================
 
 class UpdateProfileRequest(BaseModel):
@@ -103,64 +117,63 @@ class ForgotPasswordResetRequest(BaseModel):
     otp_code: str
     new_password: str
 
+# NEW: Admin Product Editing Schema
+class ProductCreateUpdate(BaseModel):
+    name: str
+    category: str
+    size: str
+    price: float
+    img: str
+    stock_quantity: int
+    description: Optional[str] = None
+
 
 # ==========================================
-# ROOT
+# 4. PUBLIC ROUTES
 # ==========================================
 
 @app.get("/")
 def read_root():
     return {"message": "Welcome to the JeevaSurabi API!"}
 
-
-# ==========================================
-# PRODUCT ROUTES
-# ==========================================
-
 @app.get("/products", response_model=List[models.ProductResponse])
 def get_products(db: Session = Depends(get_db)):
     return db.query(models.ProductDB).all()
 
+@app.get("/site-content", response_model=List[models.SiteContentResponse])
+def get_site_content(db: Session = Depends(get_db)):
+    return db.query(models.SiteContentDB).all()
+
 
 # ==========================================
-# PROFILE & UPLOAD ROUTES (protected)
+# 5. USER PROFILE & UPLOADS ROUTES
 # ==========================================
 
-@app.get("/me", response_model=models.UserResponse)
-def get_me(current_user: models.UserDB = Depends(get_current_user)):
-    return current_user
-
-# NEW: Dedicated endpoint for uploading profile picture files
 @app.post("/upload-profile-pic")
 async def upload_profile_pic(
+    request: Request,
     file: UploadFile = File(...),
     current_user: models.UserDB = Depends(get_current_user),
     db: Session = Depends(get_db)
 ):
-    # 1. Validate file type
     if not file.content_type.startswith("image/"):
         raise HTTPException(status_code=400, detail="File must be an image")
 
-    # 2. Create a unique filename
     file_extension = os.path.splitext(file.filename)[1]
     unique_filename = f"{uuid.uuid4()}{file_extension}"
     file_path = os.path.join(UPLOAD_DIR, unique_filename)
 
-    # 3. Save file to local 'uploads' folder
     with open(file_path, "wb") as buffer:
         shutil.copyfileobj(file.file, buffer)
 
-    # 4. Generate URL (Adjust IP if testing on mobile)
-    # Using relative path is safer, or hardcode your current dev IP
-    image_url = f"http://192.168.0.101:8000/uploads/{unique_filename}"
+    host_url = str(request.base_url).rstrip('/')
+    image_url = f"{host_url}/uploads/{unique_filename}"
 
-    # 5. Update Database
     current_user.profile_pic = image_url
     db.commit()
     db.refresh(current_user)
 
     return {"info": "Profile picture uploaded", "profile_pic": image_url}
-
 
 @app.put("/profile", response_model=models.UserResponse)
 def update_profile(
@@ -176,19 +189,14 @@ def update_profile(
         if db.query(models.UserDB).filter(models.UserDB.phone_number == request.phone_number).first():
             raise HTTPException(status_code=400, detail="Phone number is already in use")
 
-    if request.full_name is not None:
-        current_user.full_name = request.full_name
-    if request.email is not None:
-        current_user.email = request.email
-    if request.phone_number is not None:
-        current_user.phone_number = request.phone_number
-    if request.profile_pic is not None:
-        current_user.profile_pic = request.profile_pic
+    if request.full_name is not None: current_user.full_name = request.full_name
+    if request.email is not None: current_user.email = request.email
+    if request.phone_number is not None: current_user.phone_number = request.phone_number
+    if request.profile_pic is not None: current_user.profile_pic = request.profile_pic
 
     db.commit()
     db.refresh(current_user)
     return current_user
-
 
 @app.post("/change-password", status_code=status.HTTP_200_OK)
 def change_password(
@@ -208,7 +216,150 @@ def change_password(
 
 
 # ==========================================
-# AUTH — SIGN UP
+# 6. ORDER PROCESSING ROUTES
+# ==========================================
+
+@app.post("/orders", response_model=models.OrderResponse)
+def create_order(
+    order_req: models.OrderCreate, 
+    current_user: models.UserDB = Depends(get_current_user), 
+    db: Session = Depends(get_db)
+):
+    new_order = models.OrderDB(
+        user_id=current_user.id, 
+        shipping_address=order_req.shipping_address,
+        total_amount=0.0
+    )
+    db.add(new_order)
+    db.flush() 
+    
+    total_amount = 0.0
+    
+    for item in order_req.items:
+        product = db.query(models.ProductDB).filter(models.ProductDB.id == item.product_id).first()
+        
+        if not product:
+            raise HTTPException(status_code=404, detail=f"Product ID {item.product_id} not found")
+        
+        if product.stock_quantity < item.quantity:
+            raise HTTPException(status_code=400, detail=f"Not enough stock for {product.name}. Only {product.stock_quantity} left.")
+        
+        product.stock_quantity -= item.quantity
+        total_amount += (product.price * item.quantity)
+        
+        order_item = models.OrderItemDB(
+            order_id=new_order.id,
+            product_id=product.id,
+            quantity=item.quantity,
+            price_at_purchase=product.price
+        )
+        db.add(order_item)
+        
+    new_order.total_amount = total_amount
+    db.commit()
+    db.refresh(new_order)
+    return new_order
+
+@app.get("/my-orders", response_model=List[models.OrderResponse])
+def get_my_orders(current_user: models.UserDB = Depends(get_current_user), db: Session = Depends(get_db)):
+    return db.query(models.OrderDB).filter(models.OrderDB.user_id == current_user.id).order_by(models.OrderDB.created_at.desc()).all()
+
+
+# ==========================================
+# 7. ADMIN ROUTES (Secured)
+# ==========================================
+
+@app.get("/admin/orders", response_model=List[models.OrderResponse])
+def admin_get_all_orders(admin_user: models.UserDB = Depends(verify_admin_network), db: Session = Depends(get_db)):
+    return db.query(models.OrderDB).order_by(models.OrderDB.created_at.desc()).all()
+
+@app.put("/admin/orders/{order_id}/status")
+def admin_update_order_status(
+    order_id: int, 
+    req: models.OrderStatusUpdate, 
+    admin_user: models.UserDB = Depends(verify_admin_network), 
+    db: Session = Depends(get_db)
+):
+    order = db.query(models.OrderDB).filter(models.OrderDB.id == order_id).first()
+    if not order: 
+        raise HTTPException(status_code=404, detail="Order not found")
+    
+    order.status = req.status
+    db.commit()
+    return {"message": "Order status updated successfully", "new_status": order.status}
+
+@app.put("/admin/site-content/{section_key}", response_model=models.SiteContentResponse)
+def admin_update_site_content(
+    section_key: str, 
+    req: models.SiteContentUpdate, 
+    admin_user: models.UserDB = Depends(verify_admin_network), 
+    db: Session = Depends(get_db)
+):
+    content = db.query(models.SiteContentDB).filter(models.SiteContentDB.section_key == section_key).first()
+    
+    if not content:
+        content = models.SiteContentDB(section_key=section_key)
+        db.add(content)
+        
+    if req.image_url is not None: 
+        content.image_url = req.image_url
+    if req.text_content is not None: 
+        content.text_content = req.text_content
+        
+    db.commit()
+    db.refresh(content)
+    return content
+
+# NEW: Create New Product
+@app.post("/admin/products", response_model=models.ProductResponse)
+def admin_create_product(
+    req: ProductCreateUpdate, 
+    admin_user: models.UserDB = Depends(verify_admin_network), 
+    db: Session = Depends(get_db)
+):
+    new_product = models.ProductDB(**req.dict())
+    db.add(new_product)
+    db.commit()
+    db.refresh(new_product)
+    return new_product
+
+# NEW: Update Existing Product
+@app.put("/admin/products/{product_id}", response_model=models.ProductResponse)
+def admin_update_product(
+    product_id: int, 
+    req: ProductCreateUpdate, 
+    admin_user: models.UserDB = Depends(verify_admin_network), 
+    db: Session = Depends(get_db)
+):
+    product = db.query(models.ProductDB).filter(models.ProductDB.id == product_id).first()
+    if not product:
+        raise HTTPException(status_code=404, detail="Product not found")
+    
+    for key, value in req.dict().items():
+        setattr(product, key, value)
+        
+    db.commit()
+    db.refresh(product)
+    return product
+
+# NEW: Delete Product
+@app.delete("/admin/products/{product_id}")
+def admin_delete_product(
+    product_id: int, 
+    admin_user: models.UserDB = Depends(verify_admin_network), 
+    db: Session = Depends(get_db)
+):
+    product = db.query(models.ProductDB).filter(models.ProductDB.id == product_id).first()
+    if not product:
+        raise HTTPException(status_code=404, detail="Product not found")
+    
+    db.delete(product)
+    db.commit()
+    return {"message": "Product deleted successfully"}
+
+
+# ==========================================
+# 8. AUTHENTICATION ROUTES
 # ==========================================
 
 @app.post("/send-otp", status_code=status.HTTP_200_OK)
@@ -235,7 +386,6 @@ def send_otp(request: models.PhoneRequest, db: Session = Depends(get_db)):
     auth.send_sms_otp(request.phone_number, otp_code)
     return {"message": f"OTP sent to {request.phone_number}"}
 
-
 @app.post("/verify-otp-and-signup")
 def verify_otp_and_signup(request: models.VerifyOTPRequest, db: Session = Depends(get_db)):
     otp_record = db.query(models.OTPVerificationDB).filter(models.OTPVerificationDB.phone_number == request.phone_number).first()
@@ -258,12 +408,7 @@ def verify_otp_and_signup(request: models.VerifyOTPRequest, db: Session = Depend
     db.refresh(new_user)
 
     access_token = auth.create_access_token(data={"sub": new_user.phone_number})
-    return {"access_token": access_token, "token_type": "bearer", "full_name": new_user.full_name, "profile_pic": new_user.profile_pic}
-
-
-# ==========================================
-# AUTH — SIGN IN WITH OTP
-# ==========================================
+    return {"access_token": access_token, "token_type": "bearer", "full_name": new_user.full_name, "profile_pic": new_user.profile_pic, "is_admin": new_user.is_admin}
 
 @app.post("/send-login-otp", status_code=status.HTTP_200_OK)
 def send_login_otp(request: LoginOTPRequest, db: Session = Depends(get_db)):
@@ -289,7 +434,6 @@ def send_login_otp(request: LoginOTPRequest, db: Session = Depends(get_db)):
     auth.send_sms_otp(request.phone_number, otp_code)
     return {"message": "OTP sent"}
 
-
 @app.post("/verify-login-otp")
 def verify_login_otp(request: VerifyLoginOTPRequest, db: Session = Depends(get_db)):
     otp_record = db.query(models.OTPVerificationDB).filter(models.OTPVerificationDB.phone_number == request.phone_number).first()
@@ -303,12 +447,7 @@ def verify_login_otp(request: VerifyLoginOTPRequest, db: Session = Depends(get_d
     db.commit()
 
     access_token = auth.create_access_token(data={"sub": user.phone_number})
-    return {"access_token": access_token, "token_type": "bearer", "full_name": user.full_name, "profile_pic": user.profile_pic}
-
-
-# ==========================================
-# AUTH — FORGOT PASSWORD
-# ==========================================
+    return {"access_token": access_token, "token_type": "bearer", "full_name": user.full_name, "profile_pic": user.profile_pic, "is_admin": user.is_admin}
 
 @app.post("/forgot-password/send-otp")
 def forgot_password_send_otp(request: ForgotPasswordSendOTPRequest, db: Session = Depends(get_db)):
@@ -347,11 +486,6 @@ def forgot_password_reset(request: ForgotPasswordResetRequest, db: Session = Dep
     db.commit()
     return {"message": "Password reset success"}
 
-
-# ==========================================
-# AUTH — SIGN IN WITH PASSWORD
-# ==========================================
-
 @app.post("/login")
 def login_for_access_token(
     form_data: OAuth2PasswordRequestForm = Depends(),
@@ -366,16 +500,10 @@ def login_for_access_token(
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Incorrect username or password",
-            headers={"WWW-Authenticate": "Bearer"},
         )
 
     access_token = auth.create_access_token(data={"sub": form_data.username})
-    return {"access_token": access_token, "token_type": "bearer", "full_name": user.full_name, "profile_pic": user.profile_pic}
-
-
-# ==========================================
-# AUTH — GOOGLE LOGIN
-# ==========================================
+    return {"access_token": access_token, "token_type": "bearer", "full_name": user.full_name, "profile_pic": user.profile_pic, "is_admin": user.is_admin}
 
 @app.post("/google-login")
 def google_login(request: models.GoogleLoginRequest, db: Session = Depends(get_db)):
@@ -397,11 +525,11 @@ def google_login(request: models.GoogleLoginRequest, db: Session = Depends(get_d
         db.add(user)
     else:
         user.google_id = google_id
-        user.profile_pic = picture # Update Google pic if it changed
+        user.profile_pic = picture 
         user.full_name = name
 
     db.commit()
     db.refresh(user)
 
     access_token = auth.create_access_token(data={"sub": user.email or user.phone_number})
-    return {"access_token": access_token, "token_type": "bearer", "full_name": user.full_name, "profile_pic": user.profile_pic}
+    return {"access_token": access_token, "token_type": "bearer", "full_name": user.full_name, "profile_pic": user.profile_pic, "is_admin": user.is_admin}

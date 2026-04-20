@@ -1,7 +1,7 @@
-// cartcontext
 "use client";
-import React, { createContext, useContext, useState } from 'react';
+import React, { createContext, useContext, useState, useEffect } from 'react';
 
+// Updated interface to include stock_quantity for validation
 interface Product {
   id: number;
   name: string;
@@ -9,6 +9,7 @@ interface Product {
   img: string;
   size: string;
   quantity: number;
+  stock_quantity: number; 
 }
 
 interface CartContextType {
@@ -16,7 +17,7 @@ interface CartContextType {
   addToCart: (product: any) => void;
   removeFromCart: (id: number) => void;
   updateQuantity: (id: number, delta: number) => void;
-  clearCart: () => void; // NEW: Added this for after successful payment
+  clearCart: () => void;
   totalPrice: number;
   cartCount: number;
 }
@@ -25,33 +26,87 @@ const CartContext = createContext<CartContextType | undefined>(undefined);
 
 export function CartProvider({ children }: { children: React.ReactNode }) {
   const [cart, setCart] = useState<Product[]>([]);
+  const [isInitialized, setIsInitialized] = useState(false);
+
+  // 1. Load cart from local storage on startup
+  useEffect(() => {
+    const savedCart = localStorage.getItem("cartData");
+    if (savedCart) {
+      try {
+        setCart(JSON.parse(savedCart));
+      } catch (e) {
+        console.error("Failed to parse cart data", e);
+      }
+    }
+    setIsInitialized(true);
+  }, []);
+
+  // 2. Save cart to local storage whenever it changes
+  useEffect(() => {
+    if (isInitialized) {
+      localStorage.setItem("cartData", JSON.stringify(cart));
+    }
+  }, [cart, isInitialized]);
 
   const addToCart = (product: any) => {
+    // SECURITY CHECK: Block adding if out of stock
+    if (product.stock_quantity <= 0) {
+      if (typeof window !== 'undefined') {
+        window.dispatchEvent(new CustomEvent('show-toast', { 
+          detail: `Sorry, ${product.name} is out of stock!` 
+        }));
+      }
+      return;
+    }
+
     setCart((prev) => {
       const existing = prev.find((item) => item.id === product.id);
+      
       if (existing) {
+        // PREVENT adding more than available stock
+        if (existing.quantity >= product.stock_quantity) {
+          if (typeof window !== 'undefined') {
+            window.dispatchEvent(new CustomEvent('show-toast', { 
+              detail: `Only ${product.stock_quantity} units available in stock.` 
+            }));
+          }
+          return prev;
+        }
+
         return prev.map((item) =>
           item.id === product.id ? { ...item, quantity: item.quantity + 1 } : item
         );
       }
+
+      if (typeof window !== 'undefined') {
+        window.dispatchEvent(new CustomEvent('show-toast', { detail: 'Added to cart' }));
+      }
       return [...prev, { ...product, quantity: 1 }];
     });
-    if (typeof window !== 'undefined') {
-      window.dispatchEvent(new CustomEvent('show-toast', { detail: 'Added to cart' }));
-    }
   };
 
   const removeFromCart = (id: number) => setCart((prev) => prev.filter((item) => item.id !== id));
 
   const updateQuantity = (id: number, delta: number) => {
     setCart((prev) =>
-      prev.map((item) =>
-        item.id === id ? { ...item, quantity: Math.max(1, item.quantity + delta) } : item
-      )
+      prev.map((item) => {
+        if (item.id === id) {
+          const newQty = item.quantity + delta;
+          // Check stock limit when increasing quantity via [+] button
+          if (delta > 0 && newQty > item.stock_quantity) {
+            return item; 
+          }
+          return { ...item, quantity: Math.max(1, newQty) };
+        }
+        return item;
+      })
     );
   };
 
-  const clearCart = () => setCart([]); // Empties the cart when called
+  const clearCart = () => {
+    setCart([]);
+    localStorage.removeItem("cartData");
+  };
 
   const totalPrice = cart.reduce((acc, item) => acc + item.price * item.quantity, 0);
   const cartCount = cart.reduce((acc, item) => acc + item.quantity, 0);
