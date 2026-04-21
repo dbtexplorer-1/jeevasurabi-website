@@ -89,7 +89,7 @@ def verify_admin_network(request: Request, current_user: models.UserDB = Depends
 # ==========================================
 
 class UpdateProfileRequest(BaseModel):
-    full_name: Optional[str] = None
+    full_name: Optional[str] = None  # FIXED: Now matches the underscore formatting
     email: Optional[str] = None
     phone_number: Optional[str] = None
     profile_pic: Optional[str] = None
@@ -408,7 +408,15 @@ def verify_otp_and_signup(request: models.VerifyOTPRequest, db: Session = Depend
     db.refresh(new_user)
 
     access_token = auth.create_access_token(data={"sub": new_user.phone_number})
-    return {"access_token": access_token, "token_type": "bearer", "full_name": new_user.full_name, "profile_pic": new_user.profile_pic, "is_admin": new_user.is_admin}
+    return {
+        "access_token": access_token, 
+        "token_type": "bearer", 
+        "full_name": new_user.full_name, 
+        "email": new_user.email,
+        "phone_number": new_user.phone_number,
+        "profile_pic": new_user.profile_pic, 
+        "is_admin": new_user.is_admin
+    }
 
 @app.post("/send-login-otp", status_code=status.HTTP_200_OK)
 def send_login_otp(request: LoginOTPRequest, db: Session = Depends(get_db)):
@@ -447,7 +455,15 @@ def verify_login_otp(request: VerifyLoginOTPRequest, db: Session = Depends(get_d
     db.commit()
 
     access_token = auth.create_access_token(data={"sub": user.phone_number})
-    return {"access_token": access_token, "token_type": "bearer", "full_name": user.full_name, "profile_pic": user.profile_pic, "is_admin": user.is_admin}
+    return {
+        "access_token": access_token, 
+        "token_type": "bearer", 
+        "full_name": user.full_name, 
+        "email": user.email,
+        "phone_number": user.phone_number,
+        "profile_pic": user.profile_pic, 
+        "is_admin": user.is_admin
+    }
 
 @app.post("/forgot-password/send-otp")
 def forgot_password_send_otp(request: ForgotPasswordSendOTPRequest, db: Session = Depends(get_db)):
@@ -503,7 +519,15 @@ def login_for_access_token(
         )
 
     access_token = auth.create_access_token(data={"sub": form_data.username})
-    return {"access_token": access_token, "token_type": "bearer", "full_name": user.full_name, "profile_pic": user.profile_pic, "is_admin": user.is_admin}
+    return {
+        "access_token": access_token, 
+        "token_type": "bearer", 
+        "full_name": user.full_name, 
+        "email": user.email,
+        "phone_number": user.phone_number,
+        "profile_pic": user.profile_pic, 
+        "is_admin": user.is_admin
+    }
 
 @app.post("/google-login")
 def google_login(request: models.GoogleLoginRequest, db: Session = Depends(get_db)):
@@ -532,4 +556,12 @@ def google_login(request: models.GoogleLoginRequest, db: Session = Depends(get_d
     db.refresh(user)
 
     access_token = auth.create_access_token(data={"sub": user.email or user.phone_number})
-    return {"access_token": access_token, "token_type": "bearer", "full_name": user.full_name, "profile_pic": user.profile_pic, "is_admin": user.is_admin}
+    return {
+        "access_token": access_token, 
+        "token_type": "bearer", 
+        "full_name": user.full_name, 
+        "email": user.email,
+        "phone_number": user.phone_number,
+        "profile_pic": user.profile_pic, 
+        "is_admin": user.is_admin
+    }

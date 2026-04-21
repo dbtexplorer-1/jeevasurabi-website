@@ -6,10 +6,11 @@ export type AuthMethod = "google" | "phone" | null;
 
 interface User {
   email: string;
-  fullName?: string;
+  fullname?: string;
   phone?: string;
   profilePic?: string;
   authMethod?: AuthMethod;
+  is_admin?: boolean; // NEW: Added admin flag
 }
 
 interface AuthContextType {
@@ -18,7 +19,8 @@ interface AuthContextType {
   authMethod: AuthMethod;
   isGoogleUser: boolean;
   isPhoneUser: boolean;
-  login: (token: string, identifier: string, method?: AuthMethod, profilePic?: string) => void;
+  // NEW: Signature updated to accept the full data object from your backend
+  login: (token: string, data: any, method?: AuthMethod) => void;
   logout: () => void;
   updateUser: (updates: Partial<User>) => void;
   loading: boolean;
@@ -44,25 +46,19 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
     setLoading(false);
   }, []);
 
-  const login = (token: string, identifier: string, method: AuthMethod = "phone", profilePic?: string) => {
-    // 1. Determine exactly what the identifier is to prevent data leaks
-    const isEmail = identifier.includes("@");
-    // If it's mostly numbers/plus signs, it's a phone number. Otherwise, it's a name.
-    const isPhone = !isEmail && /^[\d\s\+\-\(\)]+$/.test(identifier);
-    const isName = !isEmail && !isPhone;
-
-    // 2. Map the data strictly to the correct fields
+  // NEW: Extract exactly what the backend gives us instead of guessing
+  const login = (token: string, data: any, method: AuthMethod = "phone") => {
     const userData: User = {
-      email: isEmail ? identifier : "",
-      fullName: isName ? identifier : "", // Only saves here if it's actually a name
-      phone: isPhone ? identifier : "",   // Only saves here if it's actually a phone number
-      profilePic: profilePic || "", 
+      email: data.email || "",
+      fullname: data.fullname || data.full_name || "",
+      phone: data.phone || data.phone_number || "",
+      profilePic: data.profile_pic || data.profilePic || "", 
       authMethod: method,
+      is_admin: data.is_admin || false, // Save the admin status!
     };
 
     localStorage.setItem("token", token);
     localStorage.setItem("userData", JSON.stringify(userData));
-    localStorage.setItem("userEmail", identifier); // backward compat
     setUser(userData);
 
     const redirectUrl = localStorage.getItem('redirectAfterLogin');
@@ -70,14 +66,15 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
         localStorage.removeItem('redirectAfterLogin'); 
         router.push(redirectUrl);
     } else {
-        router.push("/shop"); 
+        // Auto-redirect admins to their dashboard, otherwise to the shop
+        router.push(userData.is_admin ? "/admin" : "/shop"); 
     }
   };
 
   const logout = () => {
     localStorage.removeItem("token");
     localStorage.removeItem("userData");
-    localStorage.removeItem("userEmail");
+    localStorage.removeItem("userEmail"); // Kept to clear old legacy data
     setUser(null);
     router.push("/login");
   };

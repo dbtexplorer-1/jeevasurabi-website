@@ -2,7 +2,7 @@
 import React, { useState, useRef, useEffect } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
-import Image from "next/image"; // <--- ADD THIS LINE HERE
+import Image from "next/image";
 import {
   User, Camera, Lock, Phone, Mail, Edit3, Save, X,
   Eye, EyeOff, ChevronLeft, CheckCircle2, AlertCircle,
@@ -55,7 +55,7 @@ export default function ProfilePage() {
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   // Profile States
-  const [fullName, setFullName] = useState("");
+  const [fullname, setFullname] = useState("");
   const [email, setEmail] = useState("");
   const [phone, setPhone] = useState("");
   const [avatarPreview, setAvatarPreview] = useState<string | null>(null);
@@ -92,6 +92,16 @@ export default function ProfilePage() {
   const [smsNotif, setSmsNotif] = useState(false);
   const [offerNotif, setOfferNotif] = useState(true);
 
+  // Watch for context updates
+  useEffect(() => {
+    if (user) {
+      setFullname(prev => prev || user.fullname || "");
+      setEmail(prev => prev || user.email || "");
+      setPhone(prev => prev || user.phone || "");
+      setAvatarPreview(prev => prev || user.profilePic || null);
+    }
+  }, [user]);
+
   // Fetch Profile Info
   useEffect(() => {
     const fetchProfile = async () => {
@@ -101,13 +111,14 @@ export default function ProfilePage() {
         const res = await fetch(`${API_BASE}/me`, { headers: { Authorization: `Bearer ${token}` } });
         if (res.ok) {
           const data = await res.json();
-          setFullName(data.full_name || "");
+          const fetchedName = data.full_name || data.fullname || "";
+          setFullname(fetchedName);
           setEmail(data.email || "");
           setPhone(data.phone_number || "");
           setAvatarPreview(data.profile_pic || null);
           if (data.phone_number) setFpPhone(data.phone_number);
           
-          updateUser({ fullName: data.full_name, email: data.email, phone: data.phone_number, profilePic: data.profile_pic });
+          updateUser({ fullname: fetchedName, email: data.email, phone: data.phone_number, profilePic: data.profile_pic });
         }
       } catch (err) { console.error("Failed to fetch profile", err); }
     };
@@ -119,7 +130,7 @@ export default function ProfilePage() {
     }
   }, [loading, isLoggedIn, router]);
 
-  // Lazy Load Orders when Tab is clicked
+  // Lazy Load Orders
   useEffect(() => {
     if (activeTab === "orders" && !ordersFetched && isLoggedIn) {
       const fetchOrders = async () => {
@@ -186,15 +197,16 @@ export default function ProfilePage() {
   };
 
   const handleSaveProfile = async () => {
-    if (!fullName.trim()) { showToast("Full name is required", "error"); return; }
+    if (!fullname.trim()) { showToast("Full name is required", "error"); return; }
     setSavingProfile(true);
     try {
       const token = localStorage.getItem("token") || localStorage.getItem("access_token");
       const res = await fetch(`${API_BASE}/profile`, {
         method: "PUT",
         headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
+        // UPDATED: Sending full_name to match backend schema perfectly
         body: JSON.stringify({ 
-          full_name: fullName.toUpperCase(), 
+          full_name: fullname.toUpperCase(), 
           email, 
           phone_number: phone, 
           profile_pic: avatarPreview 
@@ -202,7 +214,8 @@ export default function ProfilePage() {
       });
       if (res.ok) {
         const d = await res.json();
-        updateUser({ fullName: d.full_name, email: d.email, phone: d.phone_number, profilePic: d.profile_pic });
+        const fetchedName = d.full_name || d.fullname || "";
+        updateUser({ fullname: fetchedName, email: d.email, phone: d.phone_number, profilePic: d.profile_pic });
         setAvatarPreview(d.profile_pic); 
         setEditingProfile(false);
         showToast("Profile updated successfully!", "success");
@@ -286,7 +299,7 @@ export default function ProfilePage() {
 
   // Helper Functions
   const getInitials = () => {
-    const n = fullName || user?.fullName || "USER";
+    const n = fullname || user?.fullname || user?.email || "USER";
     return n.split(" ").map((w: string) => w[0]).join("").toUpperCase().slice(0, 2);
   };
   
@@ -384,7 +397,7 @@ export default function ProfilePage() {
               </button>
             </div>
             <div className="text-center sm:text-left pb-1">
-              <h1 className="text-2xl font-serif font-bold uppercase tracking-wide">{fullName || user?.fullName || "MEMBER"}</h1>
+              <h1 className="text-2xl font-serif font-bold uppercase tracking-wide">{fullname || user?.fullname || "MEMBER"}</h1>
               <p className="text-green-300 text-sm mt-0.5">{email || phone || user?.email || user?.phone || "MEMBER"}</p>
               {isGoogleUser && (
                 <span className="inline-flex items-center gap-1 mt-1 text-[10px] font-bold uppercase tracking-widest bg-white/10 text-green-200 px-2 py-1 rounded-full">
@@ -468,10 +481,10 @@ export default function ProfilePage() {
                 {editingProfile ? (
                   <div className="relative">
                     <User size={16} className="absolute left-4 top-1/2 -translate-y-1/2 text-gray-400" />
-                    <input type="text" value={fullName} onChange={(e) => setFullName(e.target.value.toUpperCase())}
+                    <input type="text" value={fullname} onChange={(e) => setFullname(e.target.value.toUpperCase())}
                       className="w-full pl-10 pr-4 py-3.5 border-2 border-gray-200 rounded-xl focus:border-green-900 outline-none font-bold text-gray-900 uppercase transition-colors" placeholder="YOUR FULL NAME" />
                   </div>
-                ) : <p className="py-3.5 px-4 bg-gray-50 rounded-xl font-bold text-gray-800 uppercase">{fullName || "NOT SET"}</p>}
+                ) : <p className="py-3.5 px-4 bg-gray-50 rounded-xl font-bold text-gray-800 uppercase">{fullname || user?.fullname || "NOT SET"}</p>}
               </div>
               <div>
                 <label className="block text-xs font-bold text-gray-500 uppercase tracking-wider mb-2">Email Address</label>
@@ -481,7 +494,7 @@ export default function ProfilePage() {
                     <input type="email" value={email} onChange={(e) => setEmail(e.target.value)}
                       className="w-full pl-10 pr-4 py-3.5 border-2 border-gray-200 rounded-xl focus:border-green-900 outline-none font-bold text-gray-900 transition-colors" placeholder="YOUR@EMAIL.COM" />
                   </div>
-                ) : <p className="py-3.5 px-4 bg-gray-50 rounded-xl font-bold text-gray-800">{email || "NOT SET"}</p>}
+                ) : <p className="py-3.5 px-4 bg-gray-50 rounded-xl font-bold text-gray-800">{email || user?.email || "NOT SET"}</p>}
               </div>
               <div>
                 <label className="block text-xs font-bold text-gray-500 uppercase tracking-wider mb-2">Phone Number</label>
@@ -491,7 +504,7 @@ export default function ProfilePage() {
                     <input type="tel" value={phone} onChange={(e) => setPhone(e.target.value)}
                       className="w-full pl-10 pr-4 py-3.5 border-2 border-gray-200 rounded-xl focus:border-green-900 outline-none font-bold text-gray-900 transition-colors" placeholder="+91 00000 00000" />
                   </div>
-                ) : <p className="py-3.5 px-4 bg-gray-50 rounded-xl font-bold text-gray-800">{phone || "NOT SET"}</p>}
+                ) : <p className="py-3.5 px-4 bg-gray-50 rounded-xl font-bold text-gray-800">{phone || user?.phone || "NOT SET"}</p>}
               </div>
               <div>
                 <label className="block text-xs font-bold text-gray-500 uppercase tracking-wider mb-2">Account Type</label>

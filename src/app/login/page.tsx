@@ -8,7 +8,9 @@ import {
 import { GoogleLogin } from "@react-oauth/google";
 import { useAuth } from "@/context/AuthContext";
 
-const API_BASE = "http://localhost:8000";
+const API_BASE = typeof window !== "undefined" 
+  ? `http://${window.location.hostname}:8000` 
+  : "http://localhost:8000";
 
 type View =
   | "landing"
@@ -48,8 +50,9 @@ export default function LoginPage() {
         body: JSON.stringify({ token: credentialResponse.credential }),
       });
       const data = await res.json();
-      // UPDATED: Passing data.profile_pic
-      if (res.ok) authLogin(data.access_token, data.full_name || "Member", "google", data.profile_pic);
+      
+      // UPDATED: Pass the full data object to the context
+      if (res.ok) authLogin(data.access_token, data, "google");
       else setError(data.detail || "Google sign-in failed");
     } catch { setError("Could not reach server. Try again."); }
     finally { setLoading(false); }
@@ -68,8 +71,9 @@ export default function LoginPage() {
         body: form,
       });
       const data = await res.json();
-      // UPDATED: Passing data.profile_pic
-      if (res.ok) authLogin(data.access_token, data.full_name || phone, "phone", data.profile_pic);
+      
+      // UPDATED: Pass the full data object, injecting phone just in case
+      if (res.ok) authLogin(data.access_token, { ...data, phone }, "phone");
       else setError(data.detail || "Incorrect phone or password");
     } catch { setError("Could not reach server. Try again."); }
     finally { setLoading(false); }
@@ -100,8 +104,9 @@ export default function LoginPage() {
         body: JSON.stringify({ phone_number: phone, otp_code: otp }),
       });
       const data = await res.json();
-      // UPDATED: Passing data.profile_pic
-      if (res.ok) authLogin(data.access_token, data.full_name || phone, "phone", data.profile_pic);
+      
+      // UPDATED: Pass the full data object, injecting phone just in case
+      if (res.ok) authLogin(data.access_token, { ...data, phone }, "phone");
       else setError(data.detail || "Invalid OTP");
     } catch { setError("Could not reach server. Try again."); }
     finally { setLoading(false); }
@@ -142,8 +147,9 @@ export default function LoginPage() {
         body: JSON.stringify({ phone_number: phone, otp_code: otp, full_name: name, password }),
       });
       const data = await res.json();
-      // UPDATED: Passing data.profile_pic
-      if (res.ok) authLogin(data.access_token, data.full_name || name, "phone", data.profile_pic);
+      
+      // UPDATED: Pass the full data object, injecting phone & name just in case
+      if (res.ok) authLogin(data.access_token, { ...data, phone, fullname: name }, "phone");
       else {
         setError(data.detail || "Verification failed");
         if (data.detail?.toLowerCase().includes("otp")) goTo("signup-otp");

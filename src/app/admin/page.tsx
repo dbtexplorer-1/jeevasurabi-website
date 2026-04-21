@@ -54,7 +54,7 @@ export default function AdminDashboard() {
   const [accessDenied, setAccessDenied] = useState(false);
   const [statusUpdating, setStatusUpdating] = useState<number | null>(null);
 
-  // --- NEW: Product Editing States ---
+  // --- Product Editing States ---
   const [editingProduct, setEditingProduct] = useState<Product | null>(null);
   const [isSavingProduct, setIsSavingProduct] = useState(false);
 
@@ -123,7 +123,7 @@ export default function AdminDashboard() {
     }
   };
 
-  // --- NEW: Handle Product Update Submission ---
+  // --- Handle Product Add / Update Submission ---
   const handleUpdateProduct = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!editingProduct) return;
@@ -131,33 +131,66 @@ export default function AdminDashboard() {
     setIsSavingProduct(true);
     try {
       const token = localStorage.getItem("token") || localStorage.getItem("access_token");
+      const isNewProduct = editingProduct.id === 0;
       
-      // Send the updated product data to the backend
-      const res = await fetch(`${API_BASE}/admin/products/${editingProduct.id}`, {
-        method: "PUT",
+      const url = isNewProduct 
+        ? `${API_BASE}/admin/products` 
+        : `${API_BASE}/admin/products/${editingProduct.id}`;
+      
+      const method = isNewProduct ? "POST" : "PUT";
+
+      // Strip the ID if it's a new product to prevent backend mismatch
+      const { id, ...productPayload } = editingProduct;
+      const bodyData = isNewProduct ? productPayload : editingProduct;
+
+      const res = await fetch(url, {
+        method,
         headers: { 
           "Content-Type": "application/json",
           "Authorization": `Bearer ${token}` 
         },
-        body: JSON.stringify(editingProduct)
+        body: JSON.stringify(bodyData)
       });
 
-      if (!res.ok) {
-        throw new Error("Failed to update product");
-      }
+      if (!res.ok) throw new Error("Failed to save product");
       
-      const updatedProduct = await res.json();
+      const savedProduct = await res.json();
       
       // Instantly update the UI table
-      setProducts(products.map(p => p.id === updatedProduct.id ? updatedProduct : p));
+      if (isNewProduct) {
+        setProducts([...products, savedProduct]);
+      } else {
+        setProducts(products.map(p => p.id === savedProduct.id ? savedProduct : p));
+      }
       
-      // Close the modal
       setEditingProduct(null);
     } catch (error) {
       console.error(error);
-      alert("Failed to save product. Make sure you added the backend route!");
+      alert("Failed to save product.");
     } finally {
       setIsSavingProduct(false);
+    }
+  };
+
+  // --- Handle Product Deletion ---
+  const handleDeleteProduct = async (productId: number) => {
+    if (!window.confirm("Are you sure you want to completely delete this product? This cannot be undone.")) return;
+    
+    try {
+      const token = localStorage.getItem("token") || localStorage.getItem("access_token");
+      const res = await fetch(`${API_BASE}/admin/products/${productId}`, {
+        method: "DELETE",
+        headers: { "Authorization": `Bearer ${token}` }
+      });
+
+      if (res.ok) {
+        // Remove from local state instantly
+        setProducts(products.filter(p => p.id !== productId));
+      } else {
+        alert("Failed to delete product");
+      }
+    } catch (error) {
+      console.error(error);
     }
   };
 
@@ -273,14 +306,14 @@ export default function AdminDashboard() {
             </button>
             <div className="flex items-center gap-3 border-l pl-6 border-gray-200">
               <div className="text-right">
-                <p className="text-sm font-bold text-gray-900 leading-none uppercase">{user?.fullName || "Admin"}</p>
+                <p className="text-sm font-bold text-gray-900 leading-none uppercase">{user?.fullname || "Admin"}</p>
                 <p className="text-[10px] text-green-700 font-bold uppercase mt-1">Secure Connection</p>
               </div>
               {user?.profilePic ? (
                 <img src={user.profilePic} alt="Admin" className="w-10 h-10 rounded-full object-cover border border-gray-200" referrerPolicy="no-referrer" />
               ) : (
                 <div className="w-10 h-10 bg-green-100 rounded-full flex items-center justify-center text-green-900 font-black">
-                  {user?.fullName ? user.fullName.charAt(0).toUpperCase() : "A"}
+                  {user?.fullname ? user.fullname.charAt(0).toUpperCase() : "A"}
                 </div>
               )}
             </div>
@@ -417,7 +450,10 @@ export default function AdminDashboard() {
           <div className="bg-white rounded-3xl border border-gray-100 shadow-sm overflow-hidden">
             <div className="p-6 border-b border-gray-50 flex justify-between items-center">
               <h3 className="text-lg font-bold text-gray-900 uppercase">Inventory</h3>
-              <button className="flex items-center gap-2 px-4 py-2 bg-green-900 text-white rounded-xl text-xs font-bold uppercase tracking-widest hover:bg-green-800 transition-colors">
+              <button 
+                onClick={() => setEditingProduct({ id: 0, name: "", category: "", size: "", price: 0, img: "", stock_quantity: 0, description: "" })}
+                className="flex items-center gap-2 px-4 py-2 bg-green-900 text-white rounded-xl text-xs font-bold uppercase tracking-widest hover:bg-green-800 transition-colors"
+              >
                 <Plus size={14} /> Add Product
               </button>
             </div>
@@ -440,7 +476,11 @@ export default function AdminDashboard() {
                   >
                     <td className="px-6 py-4 flex items-center gap-4">
                       <div className="w-12 h-12 relative bg-gray-50 rounded-lg overflow-hidden border border-gray-100 shrink-0">
-                        <Image src={product.img} alt={product.name} fill className="object-cover" />
+                        {product.img ? (
+                          <Image src={product.img} alt={product.name} fill className="object-cover" />
+                        ) : (
+                          <Package className="absolute inset-0 m-auto text-gray-300" size={24} />
+                        )}
                       </div>
                       <div>
                         <p className="text-sm font-bold text-gray-900 group-hover:text-green-900 transition-colors">{product.name}</p>
@@ -474,7 +514,7 @@ export default function AdminDashboard() {
                           <Edit3 size={16} />
                         </button>
                         <button 
-                          onClick={(e) => { e.stopPropagation(); /* Delete logic later */ }} 
+                          onClick={(e) => { e.stopPropagation(); handleDeleteProduct(product.id); }} 
                           className="text-gray-400 hover:text-red-600 transition-colors p-2" 
                           title="Delete"
                         >
@@ -484,6 +524,13 @@ export default function AdminDashboard() {
                     </td>
                   </tr>
                 ))}
+                {products.length === 0 && (
+                   <tr>
+                     <td colSpan={5} className="px-6 py-10 text-center text-sm font-bold text-gray-400 uppercase tracking-widest">
+                       No products in inventory
+                     </td>
+                   </tr>
+                )}
               </tbody>
             </table>
           </div>
@@ -491,12 +538,14 @@ export default function AdminDashboard() {
 
       </main>
 
-      {/* --- EDIT PRODUCT MODAL --- */}
+      {/* --- ADD / EDIT PRODUCT MODAL --- */}
       {editingProduct && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm p-4">
           <div className="bg-white rounded-3xl shadow-2xl w-full max-w-2xl overflow-hidden animate-in fade-in zoom-in-95 duration-200">
             <div className="p-6 border-b border-gray-100 flex items-center justify-between bg-gray-50">
-              <h3 className="text-xl font-bold text-gray-900 uppercase tracking-widest">Edit Product</h3>
+              <h3 className="text-xl font-bold text-gray-900 uppercase tracking-widest">
+                {editingProduct.id === 0 ? "Add New Product" : "Edit Product"}
+              </h3>
               <button onClick={() => setEditingProduct(null)} className="text-gray-400 hover:text-gray-900 bg-white p-2 rounded-full shadow-sm">
                 <X size={20} />
               </button>
@@ -508,24 +557,24 @@ export default function AdminDashboard() {
                 <div className="md:col-span-2">
                   <label className="block text-xs font-bold text-gray-500 uppercase tracking-wider mb-2">Product Name</label>
                   <input required type="text" value={editingProduct.name} onChange={(e) => setEditingProduct({...editingProduct, name: e.target.value})} 
-                    className="w-full px-4 py-3 border-2 border-gray-100 rounded-xl focus:border-green-900 outline-none font-bold text-gray-900" />
+                    className="w-full px-4 py-3 border-2 border-gray-100 rounded-xl focus:border-green-900 outline-none font-bold text-gray-900" placeholder="e.g. Wood Pressed Groundnut Oil" />
                 </div>
 
                 <div>
                   <label className="block text-xs font-bold text-gray-500 uppercase tracking-wider mb-2">Category</label>
                   <input required type="text" value={editingProduct.category} onChange={(e) => setEditingProduct({...editingProduct, category: e.target.value})} 
-                    className="w-full px-4 py-3 border-2 border-gray-100 rounded-xl focus:border-green-900 outline-none font-bold text-gray-900" />
+                    className="w-full px-4 py-3 border-2 border-gray-100 rounded-xl focus:border-green-900 outline-none font-bold text-gray-900" placeholder="e.g. Oils" />
                 </div>
 
                 <div>
                   <label className="block text-xs font-bold text-gray-500 uppercase tracking-wider mb-2">Size / Weight</label>
                   <input required type="text" value={editingProduct.size} onChange={(e) => setEditingProduct({...editingProduct, size: e.target.value})} 
-                    className="w-full px-4 py-3 border-2 border-gray-100 rounded-xl focus:border-green-900 outline-none font-bold text-gray-900" />
+                    className="w-full px-4 py-3 border-2 border-gray-100 rounded-xl focus:border-green-900 outline-none font-bold text-gray-900" placeholder="e.g. 1 Liter" />
                 </div>
 
                 <div>
                   <label className="block text-xs font-bold text-gray-500 uppercase tracking-wider mb-2">Price (₹)</label>
-                  <input required type="number" step="0.01" value={editingProduct.price} onChange={(e) => setEditingProduct({...editingProduct, price: parseFloat(e.target.value)})} 
+                  <input required type="number" step="0.01" min="0" value={editingProduct.price || ""} onChange={(e) => setEditingProduct({...editingProduct, price: parseFloat(e.target.value) || 0})} 
                     className="w-full px-4 py-3 border-2 border-gray-100 rounded-xl focus:border-green-900 outline-none font-black text-green-900" />
                 </div>
 
@@ -534,20 +583,20 @@ export default function AdminDashboard() {
                     Stock Quantity
                     {editingProduct.stock_quantity <= 0 && <span className="text-red-500 text-[10px]">Out of Stock</span>}
                   </label>
-                  <input required type="number" value={editingProduct.stock_quantity} onChange={(e) => setEditingProduct({...editingProduct, stock_quantity: parseInt(e.target.value)})} 
+                  <input required type="number" min="0" value={editingProduct.stock_quantity || ""} onChange={(e) => setEditingProduct({...editingProduct, stock_quantity: parseInt(e.target.value) || 0})} 
                     className={`w-full px-4 py-3 border-2 rounded-xl focus:border-green-900 outline-none font-black ${editingProduct.stock_quantity <= 0 ? 'border-red-300 text-red-600 bg-red-50' : 'border-gray-100 text-gray-900'}`} />
                 </div>
 
                 <div className="md:col-span-2">
                   <label className="block text-xs font-bold text-gray-500 uppercase tracking-wider mb-2">Image URL</label>
                   <input required type="text" value={editingProduct.img} onChange={(e) => setEditingProduct({...editingProduct, img: e.target.value})} 
-                    className="w-full px-4 py-3 border-2 border-gray-100 rounded-xl focus:border-green-900 outline-none font-medium text-gray-700 text-sm" />
+                    className="w-full px-4 py-3 border-2 border-gray-100 rounded-xl focus:border-green-900 outline-none font-medium text-gray-700 text-sm" placeholder="e.g. /products/oil.png" />
                 </div>
 
                 <div className="md:col-span-2">
                   <label className="block text-xs font-bold text-gray-500 uppercase tracking-wider mb-2">Description</label>
                   <textarea rows={3} value={editingProduct.description || ""} onChange={(e) => setEditingProduct({...editingProduct, description: e.target.value})} 
-                    className="w-full px-4 py-3 border-2 border-gray-100 rounded-xl focus:border-green-900 outline-none font-medium text-gray-700 text-sm resize-none" />
+                    className="w-full px-4 py-3 border-2 border-gray-100 rounded-xl focus:border-green-900 outline-none font-medium text-gray-700 text-sm resize-none" placeholder="Product details..." />
                 </div>
 
               </div>
@@ -558,7 +607,7 @@ export default function AdminDashboard() {
                 </button>
                 <button type="submit" disabled={isSavingProduct} className="flex items-center gap-2 px-8 py-3 bg-green-900 text-white rounded-xl font-bold hover:bg-green-800 uppercase tracking-widest text-sm transition-colors disabled:opacity-70 shadow-lg">
                   {isSavingProduct ? <Loader2 size={16} className="animate-spin" /> : <Save size={16} />} 
-                  Save Changes
+                  {editingProduct.id === 0 ? "Create Product" : "Save Changes"}
                 </button>
               </div>
             </form>

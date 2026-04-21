@@ -24,11 +24,10 @@ export default function Navbar({ cartCount, wishlistCount, onOpenCart, onOpenWis
   const [showProfileMenu, setShowProfileMenu] = useState(false);
   const menuRef = useRef<HTMLDivElement>(null);
   
-  // Destructure user to check for admin status
   const { isLoggedIn, user, logout } = useAuth();
   
-  // Robust check for admin status (checks property from DB/Context)
-  const isAdmin = isLoggedIn && (user as any)?.is_admin === true;
+  // NEW: Check for admin status from updated AuthContext
+  const isAdmin = isLoggedIn && user?.is_admin === true;
 
   useEffect(() => {
     function handleClickOutside(event: MouseEvent) {
@@ -49,7 +48,8 @@ export default function Navbar({ cartCount, wishlistCount, onOpenCart, onOpenWis
     pathname === path ? "text-green-900 font-black" : "text-gray-700";
 
   const getInitials = () => {
-    const name = user?.fullName || user?.email || "MEMBER";
+    // UPDATED: Now looks for fullname to match your DB/Context
+    const name = user?.fullname || user?.email || "MEMBER";
     return name
       .split(" ")
       .map((w: string) => w[0])
@@ -98,8 +98,8 @@ export default function Navbar({ cartCount, wishlistCount, onOpenCart, onOpenWis
               className="relative hover:text-amber-400 transition-all hover:scale-110 flex flex-col items-center group"
               title="Admin Dashboard"
             >
-              <ShieldCheck className="w-6 h-6 md:w-8 md:h-8" strokeWidth={1.5} />
-              <span className="absolute -bottom-5 text-[8px] font-black uppercase tracking-tighter opacity-0 group-hover:opacity-100 transition-opacity whitespace-nowrap">Admin</span>
+              <ShieldCheck className="w-6 h-6 md:w-8 md:h-8 text-amber-500" strokeWidth={1.5} />
+              <span className="absolute -bottom-5 text-[8px] font-black uppercase tracking-tighter opacity-0 group-hover:opacity-100 transition-opacity whitespace-nowrap text-amber-500">Admin</span>
             </Link>
           )}
 
@@ -152,7 +152,7 @@ export default function Navbar({ cartCount, wishlistCount, onOpenCart, onOpenWis
                       <div>
                         <p className="text-[10px] uppercase tracking-widest text-gray-400 font-bold mb-1">Welcome Back</p>
                         <p className="text-sm font-black text-green-900 truncate uppercase">
-                          {user?.fullName || user?.email || "MEMBER"}
+                          {user?.fullname || user?.email || "MEMBER"}
                         </p>
                       </div>
                       {isAdmin && <span className="bg-amber-100 text-amber-700 text-[8px] font-black px-2 py-0.5 rounded-full uppercase border border-amber-200">Admin</span>}
@@ -168,12 +168,12 @@ export default function Navbar({ cartCount, wishlistCount, onOpenCart, onOpenWis
                 <div className="p-4 space-y-1">
                   {isLoggedIn ? (
                     <>
-                      {/* NEW: Admin Link in dropdown */}
+                      {/* NEW: Admin Link in dropdown with specific UI */}
                       {isAdmin && (
                         <Link href="/admin" onClick={() => setShowProfileMenu(false)} className="flex items-center justify-between p-4 rounded-2xl bg-amber-50 hover:bg-amber-100 transition-colors group border border-amber-100/50 mb-2">
                           <div className="flex items-center gap-3">
                             <LayoutDashboard size={20} className="text-amber-600" />
-                            <span className="text-sm font-black text-amber-700 uppercase">Admin Dashboard</span>
+                            <span className="text-sm font-black text-amber-700 uppercase tracking-tight">Admin Dashboard</span>
                           </div>
                           <ChevronRight size={14} className="text-amber-400" />
                         </Link>
@@ -186,17 +186,10 @@ export default function Navbar({ cartCount, wishlistCount, onOpenCart, onOpenWis
                         </div>
                         <ChevronRight size={14} className="text-gray-300" />
                       </Link>
-                      <Link href="/orders" onClick={() => setShowProfileMenu(false)} className="flex items-center justify-between p-4 rounded-2xl hover:bg-green-50 transition-colors group">
+                      <Link href="/profile" onClick={() => setShowProfileMenu(false)} className="flex items-center justify-between p-4 rounded-2xl hover:bg-green-50 transition-colors group">
                         <div className="flex items-center gap-3">
                           <Package size={20} className="text-gray-400 group-hover:text-green-700" />
                           <span className="text-sm font-bold text-gray-700 uppercase">My Orders</span>
-                        </div>
-                        <ChevronRight size={14} className="text-gray-300" />
-                      </Link>
-                      <Link href="/settings" onClick={() => setShowProfileMenu(false)} className="flex items-center justify-between p-4 rounded-2xl hover:bg-green-50 transition-colors group">
-                        <div className="flex items-center gap-3">
-                          <Settings size={20} className="text-gray-400 group-hover:text-green-700" />
-                          <span className="text-sm font-bold text-gray-700 uppercase">Settings</span>
                         </div>
                         <ChevronRight size={14} className="text-gray-300" />
                       </Link>
