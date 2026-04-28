@@ -1,18 +1,16 @@
 "use client";
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { useRouter } from 'next/navigation';
 import Image from 'next/image';
 import { 
   LayoutDashboard, ShoppingBag, Package, Users, 
-  MessageSquare, BarChart3, Settings, LogOut, 
-  Search, Bell, ArrowUpRight, ArrowDownRight, MoreVertical, 
-  Loader2, ShieldAlert, Plus, Edit3, Trash2, X, Save
+  MessageSquare, BarChart3, LogOut, 
+  Search, Bell, ArrowUpRight, ArrowDownRight, 
+  Loader2, ShieldAlert, Plus, Edit3, Trash2, X, Save, MapPin, UploadCloud
 } from 'lucide-react';
 import { useAuth } from "@/context/AuthContext";
 
-const API_BASE = typeof window !== "undefined" 
-  ? `http://${window.location.hostname}:8000` 
-  : "http://localhost:8000";
+const API_BASE = process.env.NEXT_PUBLIC_API_BASE_URL || "http://localhost:8000";
 
 // --- Types ---
 interface OrderItem {
@@ -42,6 +40,16 @@ interface Product {
   description?: string;
 }
 
+// NEW: Inquiry Interface
+interface Inquiry {
+  id: number;
+  name: string;
+  email: string;
+  message: string;
+  status: string;
+  created_at: string;
+}
+
 export default function AdminDashboard() {
   const router = useRouter();
   const { user, logout, isLoggedIn, loading: authLoading } = useAuth();
@@ -50,13 +58,28 @@ export default function AdminDashboard() {
   
   const [orders, setOrders] = useState<Order[]>([]);
   const [products, setProducts] = useState<Product[]>([]);
+  const [inquiries, setInquiries] = useState<Inquiry[]>([]);
+  
   const [isLoading, setIsLoading] = useState(true);
   const [accessDenied, setAccessDenied] = useState(false);
   const [statusUpdating, setStatusUpdating] = useState<number | null>(null);
+  const [inquiryStatusUpdating, setInquiryStatusUpdating] = useState<number | null>(null);
 
   // --- Product Editing States ---
   const [editingProduct, setEditingProduct] = useState<Product | null>(null);
   const [isSavingProduct, setIsSavingProduct] = useState(false);
+  const [isUploadingImage, setIsUploadingImage] = useState(false);
+  const fileInputRef = useRef<HTMLInputElement>(null);
+
+  // --- Custom Back Button Interceptor ---
+  useEffect(() => {
+    window.history.pushState(null, '', window.location.href);
+    const handlePopState = () => {
+      router.push('/');
+    };
+    window.addEventListener('popstate', handlePopState);
+    return () => window.removeEventListener('popstate', handlePopState);
+  }, [router]);
 
   // Fetch Admin Data
   useEffect(() => {
@@ -88,6 +111,15 @@ export default function AdminDashboard() {
         if (prodRes.ok) {
           const prodData = await prodRes.json();
           setProducts(prodData);
+        }
+
+        // 3. Fetch Inquiries
+        const inqRes = await fetch(`${API_BASE}/admin/inquiries`, {
+          headers: { "Authorization": `Bearer ${token}` }
+        });
+        if (inqRes.ok) {
+          const inqData = await inqRes.json();
+          setInquiries(inqData);
         }
 
       } catch (error) {
@@ -123,7 +155,65 @@ export default function AdminDashboard() {
     }
   };
 
-  // --- Handle Product Add / Update Submission ---
+  const updateInquiryStatus = async (inquiryId: number, newStatus: string) => {
+    setInquiryStatusUpdating(inquiryId);
+    try {
+      const token = localStorage.getItem("token") || localStorage.getItem("access_token");
+      const res = await fetch(`${API_BASE}/admin/inquiries/${inquiryId}/status`, {
+        method: "PUT",
+        headers: { 
+          "Content-Type": "application/json",
+          "Authorization": `Bearer ${token}` 
+        },
+        body: JSON.stringify({ status: newStatus })
+      });
+
+      if (res.ok) {
+        setInquiries(inquiries.map(i => i.id === inquiryId ? { ...i, status: newStatus } : i));
+      }
+    } catch (error) {
+      console.error("Failed to update inquiry status", error);
+    } finally {
+      setInquiryStatusUpdating(null);
+    }
+  };
+
+  // --- Image Upload Handler ---
+  const handleImageUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    if (file.size > 2 * 1024 * 1024) { 
+      alert("Image must be smaller than 2MB"); 
+      return; 
+    }
+
+    setIsUploadingImage(true);
+    const token = localStorage.getItem("token") || localStorage.getItem("access_token");
+
+    try {
+      const formData = new FormData();
+      formData.append("file", file);
+
+      const res = await fetch(`${API_BASE}/admin/upload-image`, {
+        method: "POST",
+        headers: { Authorization: `Bearer ${token}` },
+        body: formData,
+      });
+
+      if (res.ok) {
+        const data = await res.json();
+        setEditingProduct(prev => prev ? { ...prev, img: data.image_url } : null);
+      } else {
+        alert("Failed to upload image");
+      }
+    } catch (err) {
+      alert("Server error during image upload");
+    } finally {
+      setIsUploadingImage(false);
+    }
+  };
+
   const handleUpdateProduct = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!editingProduct) return;
@@ -139,7 +229,6 @@ export default function AdminDashboard() {
       
       const method = isNewProduct ? "POST" : "PUT";
 
-      // Strip the ID if it's a new product to prevent backend mismatch
       const { id, ...productPayload } = editingProduct;
       const bodyData = isNewProduct ? productPayload : editingProduct;
 
@@ -156,7 +245,6 @@ export default function AdminDashboard() {
       
       const savedProduct = await res.json();
       
-      // Instantly update the UI table
       if (isNewProduct) {
         setProducts([...products, savedProduct]);
       } else {
@@ -172,7 +260,6 @@ export default function AdminDashboard() {
     }
   };
 
-  // --- Handle Product Deletion ---
   const handleDeleteProduct = async (productId: number) => {
     if (!window.confirm("Are you sure you want to completely delete this product? This cannot be undone.")) return;
     
@@ -184,7 +271,6 @@ export default function AdminDashboard() {
       });
 
       if (res.ok) {
-        // Remove from local state instantly
         setProducts(products.filter(p => p.id !== productId));
       } else {
         alert("Failed to delete product");
@@ -194,21 +280,37 @@ export default function AdminDashboard() {
     }
   };
 
+  // Helpers
+  const extractName = (address: string) => address.split(',')[0] || "Customer";
+  const formatDate = (dateString: string) => new Date(dateString).toLocaleDateString('en-IN', { month: 'short', day: 'numeric', year: 'numeric' });
+
   // --- Dynamic Dashboard Calculations ---
   const totalRevenue = orders.reduce((sum, order) => sum + order.total_amount, 0);
   const totalOrders = orders.length;
   const pendingOrders = orders.filter(o => o.status.toLowerCase() === 'pending').length;
+  const unreadInquiries = inquiries.filter(i => i.status.toLowerCase() === 'unread').length;
+
+  const uniqueCustomers = Array.from(
+    new Map(
+      orders.map((o) => [
+        extractName(o.shipping_address), 
+        { 
+          name: extractName(o.shipping_address), 
+          address: o.shipping_address, 
+          lastOrder: o.created_at, 
+          orderCount: orders.filter(ord => extractName(ord.shipping_address) === extractName(o.shipping_address)).length,
+          totalSpent: orders.filter(ord => extractName(ord.shipping_address) === extractName(o.shipping_address)).reduce((acc, curr) => acc + curr.total_amount, 0)
+        }
+      ])
+    ).values()
+  );
 
   const stats = [
     { label: "Total Revenue", value: `₹${totalRevenue.toLocaleString()}`, trend: "Live", positive: true },
     { label: "Total Orders", value: totalOrders.toString(), trend: "Live", positive: true },
     { label: "Pending Orders", value: pendingOrders.toString(), trend: "Action Req", positive: pendingOrders === 0 },
-    { label: "Active Customers", value: "Protected", trend: "Secure", positive: true },
+    { label: "Total Customers", value: uniqueCustomers.length.toString(), trend: "Growing", positive: true },
   ];
-
-  // Helpers
-  const extractName = (address: string) => address.split(',')[0] || "Customer";
-  const formatDate = (dateString: string) => new Date(dateString).toLocaleDateString('en-IN', { month: 'short', day: 'numeric', year: 'numeric' });
 
   const getStatusColor = (status: string) => {
     switch (status.toLowerCase()) {
@@ -260,19 +362,25 @@ export default function AdminDashboard() {
             { name: 'Orders', icon: ShoppingBag },
             { name: 'Products', icon: Package },
             { name: 'Customers', icon: Users },
-            { name: 'Inquiries', icon: MessageSquare },
+            { name: 'Inquiries', icon: MessageSquare, badge: unreadInquiries },
             { name: 'Analytics', icon: BarChart3 },
-            { name: 'Settings', icon: Settings },
           ].map((item) => (
             <button
               key={item.name}
               onClick={() => setActiveTab(item.name)}
-              className={`w-full flex items-center gap-4 px-4 py-3 rounded-xl font-bold text-sm transition-all ${
+              className={`w-full flex items-center justify-between px-4 py-3 rounded-xl font-bold text-sm transition-all ${
                 activeTab === item.name ? 'bg-white text-green-900 shadow-lg' : 'text-green-100/60 hover:bg-white/10 hover:text-white'
               }`}
             >
-              <item.icon size={20} />
-              {item.name}
+              <div className="flex items-center gap-4">
+                <item.icon size={20} />
+                {item.name}
+              </div>
+              {item.badge > 0 && (
+                <span className={`px-2 py-0.5 rounded-full text-[10px] font-black ${activeTab === item.name ? 'bg-red-500 text-white' : 'bg-red-500 text-white'}`}>
+                  {item.badge}
+                </span>
+              )}
             </button>
           ))}
         </nav>
@@ -418,7 +526,7 @@ export default function AdminDashboard() {
                       </div>
                     </td>
                     <td className="px-6 py-5 max-w-xs">
-                      <p className="text-xs font-medium text-gray-600 truncate">{order.shipping_address}</p>
+                      <p className="text-xs font-medium text-gray-600 whitespace-pre-wrap">{order.shipping_address}</p>
                     </td>
                     <td className="px-6 py-5">
                       {statusUpdating === order.id ? (
@@ -445,7 +553,7 @@ export default function AdminDashboard() {
           </div>
         )}
 
-        {/* --- TAB VIEW: PRODUCTS (Inventory Management) --- */}
+        {/* --- TAB VIEW: PRODUCTS --- */}
         {activeTab === 'Products' && (
           <div className="bg-white rounded-3xl border border-gray-100 shadow-sm overflow-hidden">
             <div className="p-6 border-b border-gray-50 flex justify-between items-center">
@@ -475,11 +583,16 @@ export default function AdminDashboard() {
                     className="hover:bg-gray-50 transition-colors cursor-pointer group"
                   >
                     <td className="px-6 py-4 flex items-center gap-4">
-                      <div className="w-12 h-12 relative bg-gray-50 rounded-lg overflow-hidden border border-gray-100 shrink-0">
+                      <div className="w-12 h-12 relative bg-gray-50 rounded-lg overflow-hidden border border-gray-100 shrink-0 flex items-center justify-center">
                         {product.img ? (
-                          <Image src={product.img} alt={product.name} fill className="object-cover" />
+                          <img 
+                            src={product.img} 
+                            alt={product.name} 
+                            className="w-full h-full object-cover" 
+                            onError={(e) => { e.currentTarget.src = "https://via.placeholder.com/150?text=No+Image" }}
+                          />
                         ) : (
-                          <Package className="absolute inset-0 m-auto text-gray-300" size={24} />
+                          <Package className="text-gray-300" size={24} />
                         )}
                       </div>
                       <div>
@@ -536,79 +649,248 @@ export default function AdminDashboard() {
           </div>
         )}
 
+        {/* --- TAB VIEW: CUSTOMERS --- */}
+        {activeTab === 'Customers' && (
+          <div className="bg-white rounded-3xl border border-gray-100 shadow-sm overflow-hidden">
+            <div className="p-6 border-b border-gray-50">
+              <h3 className="text-lg font-bold text-gray-900 uppercase">Customer Database</h3>
+              <p className="text-xs text-gray-500 font-medium mt-1">Automatically derived from completed orders.</p>
+            </div>
+            <table className="w-full text-left">
+              <thead>
+                <tr className="bg-gray-50 text-[10px] uppercase tracking-widest text-gray-400">
+                  <th className="px-6 py-4">Customer Name</th>
+                  <th className="px-6 py-4">Shipping Location</th>
+                  <th className="px-6 py-4">Total Orders</th>
+                  <th className="px-6 py-4">Lifetime Spent</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-gray-50">
+                {uniqueCustomers.map((customer, idx) => (
+                  <tr key={idx} className="hover:bg-gray-50 transition-colors">
+                    <td className="px-6 py-5">
+                      <p className="text-sm font-black text-gray-900">{customer.name}</p>
+                    </td>
+                    <td className="px-6 py-5">
+                      <p className="text-xs font-medium text-gray-600 max-w-xs truncate flex items-center gap-1">
+                        <MapPin size={12} className="text-green-800" /> {customer.address}
+                      </p>
+                    </td>
+                    <td className="px-6 py-5">
+                      <span className="px-3 py-1 bg-green-50 text-green-800 font-bold rounded-full text-xs">
+                        {customer.orderCount} Order{customer.orderCount !== 1 && 's'}
+                      </span>
+                    </td>
+                    <td className="px-6 py-5 text-sm font-black text-gray-900">₹{customer.totalSpent}</td>
+                  </tr>
+                ))}
+                {uniqueCustomers.length === 0 && (
+                   <tr>
+                     <td colSpan={4} className="px-6 py-10 text-center text-sm font-bold text-gray-400 uppercase tracking-widest">
+                       No customers yet
+                     </td>
+                   </tr>
+                )}
+              </tbody>
+            </table>
+          </div>
+        )}
+
+        {/* --- TAB VIEW: INQUIRIES --- */}
+        {activeTab === 'Inquiries' && (
+          <div className="bg-white rounded-3xl border border-gray-100 shadow-sm overflow-hidden">
+            <div className="p-6 border-b border-gray-50 flex justify-between items-center">
+              <h3 className="text-lg font-bold text-gray-900 uppercase">Customer Inquiries</h3>
+              <span className="bg-green-100 text-green-800 text-xs font-bold px-3 py-1 rounded-full uppercase tracking-widest">
+                {unreadInquiries} Unread
+              </span>
+            </div>
+            <table className="w-full text-left">
+              <thead>
+                <tr className="bg-gray-50 text-[10px] uppercase tracking-widest text-gray-400">
+                  <th className="px-6 py-4">Date</th>
+                  <th className="px-6 py-4">Contact Info</th>
+                  <th className="px-6 py-4 w-1/3">Message</th>
+                  <th className="px-6 py-4">Status</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-gray-50">
+                {inquiries.map((inquiry) => (
+                  <tr key={inquiry.id} className={`hover:bg-gray-50 transition-colors group ${inquiry.status === 'Unread' ? 'bg-amber-50/30' : ''}`}>
+                    <td className="px-6 py-5">
+                      <p className="text-xs font-bold text-gray-500">{formatDate(inquiry.created_at)}</p>
+                    </td>
+                    <td className="px-6 py-5">
+                      <p className="text-sm font-black text-gray-900">{inquiry.name}</p>
+                      <a href={`mailto:${inquiry.email}`} className="text-[10px] font-bold text-amber-700 uppercase mt-1 hover:underline">{inquiry.email}</a>
+                    </td>
+                    <td className="px-6 py-5">
+                      <p className="text-xs font-medium text-gray-600 line-clamp-3">{inquiry.message}</p>
+                    </td>
+                    <td className="px-6 py-5">
+                      {inquiryStatusUpdating === inquiry.id ? (
+                        <Loader2 className="animate-spin text-green-900" size={20} />
+                      ) : (
+                        <select 
+                          value={inquiry.status}
+                          onChange={(e) => updateInquiryStatus(inquiry.id, e.target.value)}
+                          className={`text-xs font-black uppercase tracking-wider outline-none cursor-pointer px-3 py-1.5 rounded-xl border ${
+                            inquiry.status === 'Unread' ? 'bg-red-50 text-red-700 border-red-200' :
+                            inquiry.status === 'Read' ? 'bg-blue-50 text-blue-700 border-blue-200' :
+                            'bg-green-50 text-green-700 border-green-200'
+                          }`}
+                        >
+                          <option value="Unread">Unread</option>
+                          <option value="Read">Read</option>
+                          <option value="Resolved">Resolved</option>
+                        </select>
+                      )}
+                    </td>
+                  </tr>
+                ))}
+                {inquiries.length === 0 && (
+                   <tr>
+                     <td colSpan={4} className="px-6 py-10 text-center text-sm font-bold text-gray-400 uppercase tracking-widest">
+                       No inquiries found
+                     </td>
+                   </tr>
+                )}
+              </tbody>
+            </table>
+          </div>
+        )}
+
+        {/* --- TAB VIEW: ANALYTICS --- */}
+        {activeTab === 'Analytics' && (
+          <div className="bg-white rounded-3xl border border-gray-100 shadow-sm p-8">
+             <h3 className="text-lg font-bold text-gray-900 uppercase mb-6">Performance & Traffic</h3>
+             
+             <div className="h-72 bg-gray-50 rounded-2xl flex flex-col items-center justify-center border border-gray-100 border-dashed">
+                  <BarChart3 className="text-green-900/20 mb-4" size={48}/>
+                  <span className="text-gray-500 font-bold uppercase tracking-widest text-sm">Advanced Analytics Module</span>
+                  <span className="text-gray-400 font-medium text-xs mt-2">Integration pending deployment</span>
+             </div>
+          </div>
+        )}
+
       </main>
 
       {/* --- ADD / EDIT PRODUCT MODAL --- */}
       {editingProduct && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm p-4">
           <div className="bg-white rounded-3xl shadow-2xl w-full max-w-2xl overflow-hidden animate-in fade-in zoom-in-95 duration-200">
-            <div className="p-6 border-b border-gray-100 flex items-center justify-between bg-gray-50">
-              <h3 className="text-xl font-bold text-gray-900 uppercase tracking-widest">
-                {editingProduct.id === 0 ? "Add New Product" : "Edit Product"}
-              </h3>
-              <button onClick={() => setEditingProduct(null)} className="text-gray-400 hover:text-gray-900 bg-white p-2 rounded-full shadow-sm">
-                <X size={20} />
-              </button>
-            </div>
             
-            <form onSubmit={handleUpdateProduct} className="p-8">
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+            <form onSubmit={handleUpdateProduct} className="flex flex-col max-h-[90vh]">
+              
+              {/* MODAL HEADER */}
+              <div className="p-6 border-b border-gray-100 flex items-center justify-between bg-gray-50 sticky top-0 z-10 shrink-0">
+                <h3 className="text-xl font-bold text-gray-900 uppercase tracking-widest">
+                  {editingProduct.id === 0 ? "Add New Product" : "Edit Product"}
+                </h3>
                 
-                <div className="md:col-span-2">
-                  <label className="block text-xs font-bold text-gray-500 uppercase tracking-wider mb-2">Product Name</label>
-                  <input required type="text" value={editingProduct.name} onChange={(e) => setEditingProduct({...editingProduct, name: e.target.value})} 
-                    className="w-full px-4 py-3 border-2 border-gray-100 rounded-xl focus:border-green-900 outline-none font-bold text-gray-900" placeholder="e.g. Wood Pressed Groundnut Oil" />
+                {/* TOP RIGHT ACTION BUTTONS */}
+                <div className="flex items-center gap-3">
+                  <button type="submit" disabled={isSavingProduct || isUploadingImage} className="flex items-center gap-2 px-5 py-2.5 bg-green-900 text-white rounded-xl font-bold hover:bg-green-800 uppercase tracking-widest text-xs transition-colors shadow-sm disabled:opacity-70">
+                    {isSavingProduct ? <Loader2 size={14} className="animate-spin" /> : <Save size={14} />} 
+                    Save
+                  </button>
+                  <button type="button" onClick={() => setEditingProduct(null)} className="text-gray-400 hover:text-red-600 bg-white p-2.5 rounded-full shadow-sm border border-gray-200 transition-colors">
+                    <X size={18} />
+                  </button>
                 </div>
-
-                <div>
-                  <label className="block text-xs font-bold text-gray-500 uppercase tracking-wider mb-2">Category</label>
-                  <input required type="text" value={editingProduct.category} onChange={(e) => setEditingProduct({...editingProduct, category: e.target.value})} 
-                    className="w-full px-4 py-3 border-2 border-gray-100 rounded-xl focus:border-green-900 outline-none font-bold text-gray-900" placeholder="e.g. Oils" />
-                </div>
-
-                <div>
-                  <label className="block text-xs font-bold text-gray-500 uppercase tracking-wider mb-2">Size / Weight</label>
-                  <input required type="text" value={editingProduct.size} onChange={(e) => setEditingProduct({...editingProduct, size: e.target.value})} 
-                    className="w-full px-4 py-3 border-2 border-gray-100 rounded-xl focus:border-green-900 outline-none font-bold text-gray-900" placeholder="e.g. 1 Liter" />
-                </div>
-
-                <div>
-                  <label className="block text-xs font-bold text-gray-500 uppercase tracking-wider mb-2">Price (₹)</label>
-                  <input required type="number" step="0.01" min="0" value={editingProduct.price || ""} onChange={(e) => setEditingProduct({...editingProduct, price: parseFloat(e.target.value) || 0})} 
-                    className="w-full px-4 py-3 border-2 border-gray-100 rounded-xl focus:border-green-900 outline-none font-black text-green-900" />
-                </div>
-
-                <div>
-                  <label className="block text-xs font-bold text-gray-500 uppercase tracking-wider mb-2 flex items-center justify-between">
-                    Stock Quantity
-                    {editingProduct.stock_quantity <= 0 && <span className="text-red-500 text-[10px]">Out of Stock</span>}
-                  </label>
-                  <input required type="number" min="0" value={editingProduct.stock_quantity || ""} onChange={(e) => setEditingProduct({...editingProduct, stock_quantity: parseInt(e.target.value) || 0})} 
-                    className={`w-full px-4 py-3 border-2 rounded-xl focus:border-green-900 outline-none font-black ${editingProduct.stock_quantity <= 0 ? 'border-red-300 text-red-600 bg-red-50' : 'border-gray-100 text-gray-900'}`} />
-                </div>
-
-                <div className="md:col-span-2">
-                  <label className="block text-xs font-bold text-gray-500 uppercase tracking-wider mb-2">Image URL</label>
-                  <input required type="text" value={editingProduct.img} onChange={(e) => setEditingProduct({...editingProduct, img: e.target.value})} 
-                    className="w-full px-4 py-3 border-2 border-gray-100 rounded-xl focus:border-green-900 outline-none font-medium text-gray-700 text-sm" placeholder="e.g. /products/oil.png" />
-                </div>
-
-                <div className="md:col-span-2">
-                  <label className="block text-xs font-bold text-gray-500 uppercase tracking-wider mb-2">Description</label>
-                  <textarea rows={3} value={editingProduct.description || ""} onChange={(e) => setEditingProduct({...editingProduct, description: e.target.value})} 
-                    className="w-full px-4 py-3 border-2 border-gray-100 rounded-xl focus:border-green-900 outline-none font-medium text-gray-700 text-sm resize-none" placeholder="Product details..." />
-                </div>
-
               </div>
+              
+              {/* MODAL BODY */}
+              <div className="p-8 overflow-y-auto space-y-6">
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                  
+                  <div className="md:col-span-2">
+                    <label className="block text-xs font-bold text-gray-500 uppercase tracking-wider mb-2">Product Name</label>
+                    <input required type="text" value={editingProduct.name} onChange={(e) => setEditingProduct({...editingProduct, name: e.target.value})} 
+                      className="w-full px-4 py-3 border-2 border-gray-100 rounded-xl focus:border-green-900 outline-none font-bold text-gray-900" placeholder="e.g. Wood Pressed Groundnut Oil" />
+                  </div>
 
-              <div className="mt-8 pt-6 border-t border-gray-100 flex justify-end gap-4">
-                <button type="button" onClick={() => setEditingProduct(null)} className="px-6 py-3 rounded-xl font-bold text-gray-500 hover:bg-gray-100 uppercase tracking-widest text-sm transition-colors">
-                  Cancel
-                </button>
-                <button type="submit" disabled={isSavingProduct} className="flex items-center gap-2 px-8 py-3 bg-green-900 text-white rounded-xl font-bold hover:bg-green-800 uppercase tracking-widest text-sm transition-colors disabled:opacity-70 shadow-lg">
-                  {isSavingProduct ? <Loader2 size={16} className="animate-spin" /> : <Save size={16} />} 
-                  {editingProduct.id === 0 ? "Create Product" : "Save Changes"}
-                </button>
+                  <div>
+                    <label className="block text-xs font-bold text-gray-500 uppercase tracking-wider mb-2">Category</label>
+                    <input required type="text" value={editingProduct.category} onChange={(e) => setEditingProduct({...editingProduct, category: e.target.value})} 
+                      className="w-full px-4 py-3 border-2 border-gray-100 rounded-xl focus:border-green-900 outline-none font-bold text-gray-900" placeholder="e.g. Oils" />
+                  </div>
+
+                  <div>
+                    <label className="block text-xs font-bold text-gray-500 uppercase tracking-wider mb-2">Size / Weight</label>
+                    <input required type="text" value={editingProduct.size} onChange={(e) => setEditingProduct({...editingProduct, size: e.target.value})} 
+                      className="w-full px-4 py-3 border-2 border-gray-100 rounded-xl focus:border-green-900 outline-none font-bold text-gray-900" placeholder="e.g. 1 Liter" />
+                  </div>
+
+                  <div>
+                    <label className="block text-xs font-bold text-gray-500 uppercase tracking-wider mb-2">Price (₹)</label>
+                    <input required type="number" step="0.01" min="0" value={editingProduct.price || ""} onChange={(e) => setEditingProduct({...editingProduct, price: parseFloat(e.target.value) || 0})} 
+                      className="w-full px-4 py-3 border-2 border-gray-100 rounded-xl focus:border-green-900 outline-none font-black text-green-900" />
+                  </div>
+
+                  <div>
+                    <label className="block text-xs font-bold text-gray-500 uppercase tracking-wider mb-2 flex items-center justify-between">
+                      Stock Quantity
+                      {editingProduct.stock_quantity <= 0 && <span className="text-red-500 text-[10px]">Out of Stock</span>}
+                    </label>
+                    <input required type="number" min="0" value={editingProduct.stock_quantity || ""} onChange={(e) => setEditingProduct({...editingProduct, stock_quantity: parseInt(e.target.value) || 0})} 
+                      className={`w-full px-4 py-3 border-2 rounded-xl focus:border-green-900 outline-none font-black ${editingProduct.stock_quantity <= 0 ? 'border-red-300 text-red-600 bg-red-50' : 'border-gray-100 text-gray-900'}`} />
+                  </div>
+
+                  {/* CUSTOM IMAGE UPLOAD UI */}
+                  <div className="md:col-span-2">
+                    <label className="block text-xs font-bold text-gray-500 uppercase tracking-wider mb-2">Product Image</label>
+                    <div className="flex items-center gap-4">
+                      
+                      {/* Image Preview Box */}
+                      <div className="w-16 h-16 rounded-xl border-2 border-gray-100 bg-gray-50 flex items-center justify-center overflow-hidden shrink-0">
+                         {isUploadingImage ? (
+                           <Loader2 size={20} className="animate-spin text-green-900" />
+                         ) : editingProduct.img ? (
+                           <img 
+                             src={editingProduct.img} 
+                             alt="preview" 
+                             className="w-full h-full object-cover" 
+                             onError={(e) => { e.currentTarget.src = "https://via.placeholder.com/150?text=No+Image" }}
+                           />
+                         ) : (
+                           <Package size={20} className="text-gray-300" />
+                         )}
+                      </div>
+                      
+                      <div className="flex-1">
+                        {/* Hidden file input */}
+                        <input type="file" accept="image/*" ref={fileInputRef} className="hidden" onChange={handleImageUpload} />
+                        
+                        {/* Upload Button */}
+                        <button 
+                          type="button" 
+                          onClick={() => fileInputRef.current?.click()} 
+                          disabled={isUploadingImage} 
+                          className="flex items-center gap-2 px-4 py-2 bg-green-50 text-green-900 font-bold text-xs uppercase tracking-widest rounded-lg border border-green-200 hover:bg-green-100 transition-colors disabled:opacity-50 mb-2"
+                        >
+                          <UploadCloud size={14} /> Upload New Image
+                        </button>
+                        
+                        {/* Read-Only URL Box */}
+                        <input 
+                          readOnly 
+                          type="text" 
+                          value={editingProduct.img} 
+                          className="w-full px-3 py-2 border border-gray-200 rounded-lg bg-gray-100 outline-none font-medium text-gray-500 text-[10px]" 
+                          placeholder="Image URL will appear here after upload..." 
+                        />
+                      </div>
+                    </div>
+                  </div>
+
+                  <div className="md:col-span-2">
+                    <label className="block text-xs font-bold text-gray-500 uppercase tracking-wider mb-2">Description</label>
+                    <textarea rows={3} value={editingProduct.description || ""} onChange={(e) => setEditingProduct({...editingProduct, description: e.target.value})} 
+                      className="w-full px-4 py-3 border-2 border-gray-100 rounded-xl focus:border-green-900 outline-none font-medium text-gray-700 text-sm resize-none" placeholder="Product details..." />
+                  </div>
+
+                </div>
               </div>
             </form>
           </div>

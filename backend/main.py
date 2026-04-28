@@ -24,8 +24,10 @@ models.Base.metadata.create_all(bind=engine)
 
 app = FastAPI(title="JeevaSurabi E-commerce API")
 
-# Setup uploads directory
-UPLOAD_DIR = "uploads"
+# Setup absolute uploads directory
+BASE_DIR = os.path.dirname(os.path.abspath(__file__))
+UPLOAD_DIR = os.path.join(BASE_DIR, "uploads")
+
 if not os.path.exists(UPLOAD_DIR):
     os.makedirs(UPLOAD_DIR)
 
@@ -46,6 +48,27 @@ app.add_middleware(
 # ==========================================
 
 oauth2_scheme = OAuth2PasswordBearer(tokenUrl="login")
+
+# Modified to optionally return None if token is missing/invalid, used for public routes
+def get_current_user_optional(
+    token: str = Depends(OAuth2PasswordBearer(tokenUrl="login", auto_error=False)),
+    db: Session = Depends(get_db)
+) -> Optional[models.UserDB]:
+    if not token:
+        return None
+    try:
+        payload = jwt.decode(token, auth.SECRET_KEY, algorithms=[auth.ALGORITHM])
+        subject: str = payload.get("sub")
+        if subject is None:
+            return None
+    except JWTError:
+        return None
+
+    user = db.query(models.UserDB).filter(
+        (models.UserDB.email == subject) |
+        (models.UserDB.phone_number == subject)
+    ).first()
+    return user
 
 def get_current_user(
     token: str = Depends(oauth2_scheme),
@@ -117,7 +140,6 @@ class ForgotPasswordResetRequest(BaseModel):
     otp_code: str
     new_password: str
 
-# NEW: Admin Product Editing Schema
 class ProductCreateUpdate(BaseModel):
     name: str
     category: str
@@ -143,6 +165,24 @@ def get_products(db: Session = Depends(get_db)):
 @app.get("/site-content", response_model=List[models.SiteContentResponse])
 def get_site_content(db: Session = Depends(get_db)):
     return db.query(models.SiteContentDB).all()
+
+# NEW: Submit Inquiry
+@app.post("/inquiries", response_model=models.InquiryResponse)
+def submit_inquiry(
+    req: models.InquiryCreate, 
+    db: Session = Depends(get_db),
+    current_user: Optional[models.UserDB] = Depends(get_current_user_optional)
+):
+    new_inquiry = models.InquiryDB(
+        name=req.name,
+        email=req.email,
+        message=req.message,
+        user_id=current_user.id if current_user else None
+    )
+    db.add(new_inquiry)
+    db.commit()
+    db.refresh(new_inquiry)
+    return new_inquiry
 
 
 # ==========================================
@@ -310,7 +350,6 @@ def admin_update_site_content(
     db.refresh(content)
     return content
 
-# NEW: Create New Product
 @app.post("/admin/products", response_model=models.ProductResponse)
 def admin_create_product(
     req: ProductCreateUpdate, 
@@ -323,7 +362,6 @@ def admin_create_product(
     db.refresh(new_product)
     return new_product
 
-# NEW: Update Existing Product
 @app.put("/admin/products/{product_id}", response_model=models.ProductResponse)
 def admin_update_product(
     product_id: int, 
@@ -342,7 +380,6 @@ def admin_update_product(
     db.refresh(product)
     return product
 
-# NEW: Delete Product
 @app.delete("/admin/products/{product_id}")
 def admin_delete_product(
     product_id: int, 
@@ -356,6 +393,27 @@ def admin_delete_product(
     db.delete(product)
     db.commit()
     return {"message": "Product deleted successfully"}
+
+# NEW: Admin GET Inquiries
+@app.get("/admin/inquiries", response_model=List[models.InquiryResponse])
+def admin_get_inquiries(admin_user: models.UserDB = Depends(verify_admin_network), db: Session = Depends(get_db)):
+    return db.query(models.InquiryDB).order_by(models.InquiryDB.created_at.desc()).all()
+
+# NEW: Admin PUT Inquiry Status
+@app.put("/admin/inquiries/{inquiry_id}/status")
+def admin_update_inquiry_status(
+    inquiry_id: int,
+    req: models.InquiryStatusUpdate,
+    admin_user: models.UserDB = Depends(verify_admin_network),
+    db: Session = Depends(get_db)
+):
+    inquiry = db.query(models.InquiryDB).filter(models.InquiryDB.id == inquiry_id).first()
+    if not inquiry:
+        raise HTTPException(status_code=404, detail="Inquiry not found")
+    
+    inquiry.status = req.status
+    db.commit()
+    return {"message": "Inquiry status updated successfully", "new_status": inquiry.status}
 
 
 # ==========================================
@@ -565,3 +623,25 @@ def google_login(request: models.GoogleLoginRequest, db: Session = Depends(get_d
         "profile_pic": user.profile_pic, 
         "is_admin": user.is_admin
     }
+
+    # NEW: Admin Image Upload for Products
+@app.post("/admin/upload-image")
+async def admin_upload_image(
+    request: Request,
+    file: UploadFile = File(...),
+    admin_user: models.UserDB = Depends(verify_admin_network)
+):
+    if not file.content_type.startswith("image/"):
+        raise HTTPException(status_code=400, detail="File must be an image")
+
+    file_extension = os.path.splitext(file.filename)[1]
+    unique_filename = f"product_{uuid.uuid4()}{file_extension}"
+    file_path = os.path.join(UPLOAD_DIR, unique_filename)
+
+    with open(file_path, "wb") as buffer:
+        shutil.copyfileobj(file.file, buffer)
+
+    host_url = str(request.base_url).rstrip('/')
+    image_url = f"{host_url}/uploads/{unique_filename}"
+
+    return {"image_url": image_url}

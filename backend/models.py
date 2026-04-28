@@ -1,4 +1,3 @@
-# backend/models.py
 from sqlalchemy import Column, Integer, String, Float, Text, Boolean, DateTime, ForeignKey
 from sqlalchemy.orm import relationship
 from sqlalchemy.sql import func
@@ -38,8 +37,9 @@ class UserDB(Base):
     is_active = Column(Boolean, default=True)
     is_admin = Column(Boolean, default=False)
     
-    # Relationship to Orders
+    # Relationships
     orders = relationship("OrderDB", back_populates="owner")
+    inquiries = relationship("InquiryDB", back_populates="user") # NEW: Relates inquiries to users
 
 class OTPVerificationDB(Base):
     __tablename__ = "otp_codes"
@@ -49,7 +49,7 @@ class OTPVerificationDB(Base):
     otp_code = Column(String(10))
     expires_at = Column(DateTime)
 
-# --- NEW: ORDER MODELS ---
+# --- ORDER MODELS ---
 
 class OrderDB(Base):
     __tablename__ = "orders"
@@ -76,7 +76,7 @@ class OrderItemDB(Base):
     order = relationship("OrderDB", back_populates="items")
     product = relationship("ProductDB")
 
-# --- NEW: SITE CONTENT / CMS MODEL ---
+# --- SITE CONTENT / CMS MODEL ---
 
 class SiteContentDB(Base):
     __tablename__ = "site_content"
@@ -85,6 +85,21 @@ class SiteContentDB(Base):
     section_key = Column(String(100), unique=True, index=True) # e.g., "home_banner", "shop_header"
     image_url = Column(String(500), nullable=True)
     text_content = Column(Text, nullable=True)
+
+# --- NEW: INQUIRY MODEL ---
+
+class InquiryDB(Base):
+    __tablename__ = "inquiries"
+
+    id = Column(Integer, primary_key=True, index=True)
+    user_id = Column(Integer, ForeignKey("users.id"), nullable=True) # Optional link if logged in
+    name = Column(String(150))
+    email = Column(String(255))
+    message = Column(Text)
+    status = Column(String(50), default="Unread") # Unread, Read, Resolved
+    created_at = Column(DateTime(timezone=True), server_default=func.now())
+
+    user = relationship("UserDB", back_populates="inquiries")
 
 
 # ==========================================
@@ -134,7 +149,7 @@ class VerifyOTPRequest(BaseModel):
 class GoogleLoginRequest(BaseModel):
     token: str 
 
-# --- NEW: ORDER SCHEMAS ---
+# --- ORDER SCHEMAS ---
 
 class OrderItemCreate(BaseModel):
     product_id: int
@@ -169,7 +184,7 @@ class OrderResponse(BaseModel):
 class OrderStatusUpdate(BaseModel):
     status: str
 
-# --- NEW: SITE CONTENT SCHEMAS ---
+# --- SITE CONTENT SCHEMAS ---
 
 class SiteContentUpdate(BaseModel):
     image_url: Optional[str] = None
@@ -183,3 +198,25 @@ class SiteContentResponse(BaseModel):
 
     class Config:
         from_attributes = True
+
+# --- NEW: INQUIRY SCHEMAS ---
+
+class InquiryCreate(BaseModel):
+    name: str
+    email: str
+    message: str
+
+class InquiryResponse(BaseModel):
+    id: int
+    user_id: Optional[int] = None
+    name: str
+    email: str
+    message: str
+    status: str
+    created_at: datetime
+
+    class Config:
+        from_attributes = True
+
+class InquiryStatusUpdate(BaseModel):
+    status: str

@@ -1,4 +1,4 @@
-# backend/auth.py
+import os
 import logging
 from datetime import datetime, timedelta, timezone
 from typing import Optional
@@ -8,6 +8,10 @@ from google.oauth2 import id_token
 from google.auth.transport import requests
 import random
 import resend
+from dotenv import load_dotenv
+
+# Load environment variables from the .env file
+load_dotenv()
 
 # ==========================================
 # 0. LOGGING CONFIGURATION
@@ -18,13 +22,13 @@ logger = logging.getLogger(__name__)
 # ==========================================
 # 1. SECURITY CONFIGURATION
 # ==========================================
-SECRET_KEY = "jeevasurabi_super_secret_key_change_this_later" 
-ALGORITHM = "HS256"
+# Securely fetching from .env (with a fallback just in case)
+SECRET_KEY = os.getenv("JWT_SECRET_KEY")
+ALGORITHM = os.getenv("JWT_ALGORITHM", "HS256")
 ACCESS_TOKEN_EXPIRE_MINUTES = 60 * 24 * 7 
 
-# GOOGLE CONFIGURATION
-# You will get this ID from the Google Cloud Console later
-GOOGLE_CLIENT_ID = "886676518253-p11r15ftrr291kkb77t5mdd3aus0hhlv.apps.googleusercontent.com"
+# GOOGLE CONFIGURATION securely fetched
+GOOGLE_CLIENT_ID = os.getenv("GOOGLE_CLIENT_ID")
 
 # Password Hashing
 pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
@@ -82,7 +86,9 @@ def send_sms_otp(phone_number: str, otp: str):
 
 def send_otp_email(receiver_email: str, otp: str):
     """(Optional) Utility if you still want to send emails via Resend"""
-    resend.api_key = "re_McZRQ7Hw_NnLbG3GB6GuTZMkTnxhG2nkK"
+    # Securely fetching API key
+    resend.api_key = os.getenv("RESEND_API_KEY")
+    
     params = {
         "from": "JeevaSurabi <onboarding@resend.dev>",
         "to": [receiver_email],
@@ -92,5 +98,4 @@ def send_otp_email(receiver_email: str, otp: str):
     try:
         return resend.Emails.send(params)
     except Exception as e:
-        # Also updated this to use the logger instead of print
         logger.error(f"Email failed: {e}")

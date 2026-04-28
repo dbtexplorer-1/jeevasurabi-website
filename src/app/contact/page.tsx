@@ -1,7 +1,12 @@
 "use client";
 import React, { useState } from 'react';
-import Image from 'next/image'; // Import Image component
-import { Mail, Phone, MapPin, Send, Clock } from 'lucide-react';
+import Image from 'next/image';
+import { Mail, Phone, MapPin, Send, Clock, Loader2, CheckCircle2, AlertCircle } from 'lucide-react';
+import { siteConfig } from "@/config/site";
+
+const API_BASE = process.env.NEXT_PUBLIC_API_BASE_URL || "http://localhost:8000";
+
+interface Toast { message: string; type: "success" | "error"; }
 
 export default function ContactPage() {
   const [formData, setFormData] = useState({
@@ -11,11 +16,49 @@ export default function ContactPage() {
     subject: '',
     message: ''
   });
+  
+  const [isSubmitting, setIsSubmitting] = useState(false);
+  const [toast, setToast] = useState<Toast | null>(null); // NEW: Toast state
 
-  const handleSubmit = (e: React.FormEvent) => {
+  // Helper to show custom alerts
+  const showToast = (message: string, type: "success" | "error") => {
+    setToast({ message, type });
+    setTimeout(() => setToast(null), 4000); // Auto-hide after 4 seconds
+  };
+
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    console.log("Form Submitted:", formData);
-    alert("Thank you! Your message has been sent to JeevaSurabi.");
+    setIsSubmitting(true);
+
+    try {
+      const combinedMessage = `Phone: ${formData.phone}\nSubject: ${formData.subject}\n\nMessage:\n${formData.message}`;
+
+      const token = localStorage.getItem("token") || localStorage.getItem("access_token");
+      const headers: any = { "Content-Type": "application/json" };
+      if (token) headers["Authorization"] = `Bearer ${token}`; 
+
+      const res = await fetch(`${API_BASE}/inquiries`, {
+        method: "POST",
+        headers,
+        body: JSON.stringify({
+          name: formData.name,
+          email: formData.email,
+          message: combinedMessage
+        })
+      });
+
+      if (res.ok) {
+        showToast("Thank you! Your message has been sent.", "success");
+        setFormData({ name: '', email: '', phone: '', subject: '', message: '' });
+      } else {
+        showToast("Failed to send message. Please try again.", "error");
+      }
+    } catch (error) {
+      console.error(error);
+      showToast("Network error. Please check your connection.", "error");
+    } finally {
+      setIsSubmitting(false);
+    }
   };
 
   const handleChange = (e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement>) => {
@@ -23,23 +66,29 @@ export default function ContactPage() {
   };
 
   return (
-    <div className="min-h-screen bg-[#fafaf9] text-gray-900 overflow-x-hidden font-medium">
+    <div className="min-h-screen bg-[#fafaf9] text-gray-900 overflow-x-hidden font-medium relative">
       
+      {/* --- CUSTOM TOAST NOTIFICATION --- */}
+      {toast && (
+        <div className={`fixed top-24 right-6 z-[100] flex items-center gap-3 px-5 py-4 rounded-2xl shadow-2xl text-white text-sm font-bold animate-in slide-in-from-top-4 duration-300 ${toast.type === "success" ? "bg-green-800" : "bg-red-600"}`}>
+          {toast.type === "success" ? <CheckCircle2 size={18} /> : <AlertCircle size={18} />}
+          {toast.message}
+        </div>
+      )}
+
       {/* --- HERO SECTION WITH BACKGROUND IMAGE --- */}
       <section className="relative py-24 md:py-32 bg-green-950 text-white overflow-hidden">
-        {/* Background Image with Overlay */}
         <div className="absolute inset-0">
           <Image 
-            src="/contactbg.png" // Make sure to add this image to your public folder
+            src="/contactbg.png" 
             alt="Contact Jeevasurabi" 
             fill 
-            className="object-cover opacity-30" // Adjust opacity as needed
+            className="object-cover opacity-30" 
             priority
           />
-          <div className="absolute inset-0 bg-green-950/40 mix-blend-multiply" /> {/* Adds a green tint for better text contrast */}
+          <div className="absolute inset-0 bg-green-950/40 mix-blend-multiply" /> 
         </div>
         
-        {/* Hero Content */}
         <div className="relative z-10 max-w-4xl mx-auto px-6 text-center">
           <h1 className="text-4xl md:text-7xl font-serif mb-6 tracking-tight drop-shadow-sm">Get in Touch</h1>
           <p className="text-lg md:text-xl text-green-100 font-light italic drop-shadow-sm">
@@ -59,18 +108,21 @@ export default function ContactPage() {
                 <div className="flex items-start gap-4">
                   <div className="bg-green-100 p-3 rounded-full text-green-900 shrink-0"><MapPin size={24} /></div>
                   <p className="text-lg">
-                    <strong>Jeevasurabi Food Products</strong><br />
-                    #318, Arunachalam Colony, Vadasery,<br />
-                    Nagercoil – 629001
+                    <strong>{siteConfig.name} Food Products</strong><br />
+                    {siteConfig.contact.address.split(',').map((line, i) => (
+                      <React.Fragment key={i}>
+                        {line.trim()}{i !== siteConfig.contact.address.split(',').length - 1 && ','}<br />
+                      </React.Fragment>
+                    ))}
                   </p>
                 </div>
                 <div className="flex items-center gap-4">
                   <div className="bg-green-100 p-3 rounded-full text-green-900 shrink-0"><Phone size={24} /></div>
-                  <p className="text-lg">+91 94436 08203</p>
+                  <p className="text-lg">{siteConfig.contact.phone}</p>
                 </div>
                 <div className="flex items-center gap-4">
                   <div className="bg-green-100 p-3 rounded-full text-green-900 shrink-0"><Mail size={24} /></div>
-                  <p className="text-lg break-all">jeevasurabifoodproducts7@gmail.com</p>
+                  <p className="text-lg break-all">{siteConfig.contact.email}</p>
                 </div>
                 <div className="flex items-center gap-4">
                   <div className="bg-green-100 p-3 rounded-full text-green-900 shrink-0"><Clock size={24} /></div>
@@ -97,33 +149,40 @@ export default function ContactPage() {
           <div className="bg-white p-8 md:p-12 rounded-[3rem] shadow-2xl shadow-green-900/5 border border-gray-100">
             <h2 className="text-3xl font-serif text-green-900 mb-8">Send an Inquiry</h2>
             <form onSubmit={handleSubmit} className="space-y-6">
-              {/* ... Form inputs remain the same ... */}
               <div className="grid md:grid-cols-2 gap-6">
                 <div className="flex flex-col gap-2">
                   <label htmlFor="name" className="text-xs font-bold uppercase tracking-widest text-gray-400">Your Name</label>
-                  <input required id="name" type="text" placeholder="Your Name" onChange={handleChange} className="bg-gray-50 border-none rounded-xl py-4 px-6 focus:ring-2 focus:ring-green-900/20 transition-all outline-none" />
+                  <input required id="name" value={formData.name} type="text" placeholder="Your Name" onChange={handleChange} className="bg-gray-50 border-none rounded-xl py-4 px-6 focus:ring-2 focus:ring-green-900/20 transition-all outline-none" />
                 </div>
                 <div className="flex flex-col gap-2">
                   <label htmlFor="email" className="text-xs font-bold uppercase tracking-widest text-gray-400">Your Email ID</label>
-                  <input required id="email" type="email" placeholder="example@mail.com" onChange={handleChange} className="bg-gray-50 border-none rounded-xl py-4 px-6 focus:ring-2 focus:ring-green-900/20 transition-all outline-none" />
+                  <input required id="email" value={formData.email} type="email" placeholder="example@mail.com" onChange={handleChange} className="bg-gray-50 border-none rounded-xl py-4 px-6 focus:ring-2 focus:ring-green-900/20 transition-all outline-none" />
                 </div>
               </div>
               <div className="grid md:grid-cols-2 gap-6">
                 <div className="flex flex-col gap-2">
                   <label htmlFor="phone" className="text-xs font-bold uppercase tracking-widest text-gray-400">Phone Number</label>
-                  <input required id="phone" type="tel" placeholder="+91" onChange={handleChange} className="bg-gray-50 border-none rounded-xl py-4 px-6 focus:ring-2 focus:ring-green-900/20 transition-all outline-none" />
+                  <input required id="phone" value={formData.phone} type="tel" placeholder="+91" onChange={handleChange} className="bg-gray-50 border-none rounded-xl py-4 px-6 focus:ring-2 focus:ring-green-900/20 transition-all outline-none" />
                 </div>
                 <div className="flex flex-col gap-2">
                   <label htmlFor="subject" className="text-xs font-bold uppercase tracking-widest text-gray-400">Subject</label>
-                  <input required id="subject" type="text" placeholder="Inquiry Subject" onChange={handleChange} className="bg-gray-50 border-none rounded-xl py-4 px-6 focus:ring-2 focus:ring-green-900/20 transition-all outline-none" />
+                  <input required id="subject" value={formData.subject} type="text" placeholder="Inquiry Subject" onChange={handleChange} className="bg-gray-50 border-none rounded-xl py-4 px-6 focus:ring-2 focus:ring-green-900/20 transition-all outline-none" />
                 </div>
               </div>
               <div className="flex flex-col gap-2">
                 <label htmlFor="message" className="text-xs font-bold uppercase tracking-widest text-gray-400">Your Message</label>
-                <textarea required id="message" rows={5} placeholder="Write your message here..." onChange={handleChange} className="bg-gray-50 border-none rounded-xl py-4 px-6 focus:ring-2 focus:ring-green-900/20 transition-all outline-none resize-none" />
+                <textarea required id="message" value={formData.message} rows={5} placeholder="Write your message here..." onChange={handleChange} className="bg-gray-50 border-none rounded-xl py-4 px-6 focus:ring-2 focus:ring-green-900/20 transition-all outline-none resize-none" />
               </div>
-              <button type="submit" className="w-full bg-green-900 text-white py-5 rounded-2xl font-bold uppercase tracking-[0.2em] text-sm flex items-center justify-center gap-3 hover:bg-green-800 transition-all shadow-xl shadow-green-900/20 active:scale-[0.98]">
-                Submit Message <Send size={18} />
+              <button 
+                type="submit" 
+                disabled={isSubmitting}
+                className="w-full bg-green-900 text-white py-5 rounded-2xl font-bold uppercase tracking-[0.2em] text-sm flex items-center justify-center gap-3 hover:bg-green-800 transition-all shadow-xl shadow-green-900/20 active:scale-[0.98] disabled:opacity-70 disabled:cursor-not-allowed"
+              >
+                {isSubmitting ? (
+                  <>Sending Message <Loader2 size={18} className="animate-spin" /></>
+                ) : (
+                  <>Submit Message <Send size={18} /></>
+                )}
               </button>
             </form>
           </div>
