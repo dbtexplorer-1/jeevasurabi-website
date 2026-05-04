@@ -1,5 +1,5 @@
 "use client";
-import React, { useState } from "react";
+import React, { useState, useEffect } from "react";
 import Link from "next/link";
 import {
   Lock, ArrowLeft, Phone, User, CheckCircle2, Loader2,
@@ -49,7 +49,6 @@ export default function LoginPage() {
       });
       const data = await res.json();
       
-      // UPDATED: Pass the full data object to the context
       if (res.ok) authLogin(data.access_token, data, "google");
       else setError(data.detail || "Google sign-in failed");
     } catch { setError("Could not reach server. Try again."); }
@@ -70,7 +69,6 @@ export default function LoginPage() {
       });
       const data = await res.json();
       
-      // UPDATED: Pass the full data object, injecting phone just in case
       if (res.ok) authLogin(data.access_token, { ...data, phone }, "phone");
       else setError(data.detail || "Incorrect phone or password");
     } catch { setError("Could not reach server. Try again."); }
@@ -93,8 +91,10 @@ export default function LoginPage() {
     finally { setLoading(false); }
   };
 
-  const handleVerifyLoginOtp = async (e: React.FormEvent) => {
-    e.preventDefault(); setLoading(true); clearError();
+  // UPDATED: Now accepts optional event for Auto-Verification
+  const handleVerifyLoginOtp = async (e?: React.FormEvent) => {
+    if (e) e.preventDefault();
+    setLoading(true); clearError();
     try {
       const res = await fetch(`${API_BASE}/verify-login-otp`, {
         method: "POST",
@@ -103,7 +103,6 @@ export default function LoginPage() {
       });
       const data = await res.json();
       
-      // UPDATED: Pass the full data object, injecting phone just in case
       if (res.ok) authLogin(data.access_token, { ...data, phone }, "phone");
       else setError(data.detail || "Invalid OTP");
     } catch { setError("Could not reach server. Try again."); }
@@ -128,8 +127,9 @@ export default function LoginPage() {
     finally { setLoading(false); }
   };
 
-  const handleVerifySignupOtp = (e: React.FormEvent) => {
-    e.preventDefault();
+  // UPDATED: Now accepts optional event for Auto-Verification
+  const handleVerifySignupOtp = (e?: React.FormEvent) => {
+    if (e) e.preventDefault();
     if (otp.length !== 6) { setError("Enter the 6-digit code"); return; }
     clearError(); goTo("signup-password");
   };
@@ -146,7 +146,6 @@ export default function LoginPage() {
       });
       const data = await res.json();
       
-      // UPDATED: Pass the full data object, injecting phone & name just in case
       if (res.ok) authLogin(data.access_token, { ...data, phone, fullname: name }, "phone");
       else {
         setError(data.detail || "Verification failed");
@@ -172,8 +171,9 @@ export default function LoginPage() {
     finally { setLoading(false); }
   };
 
-  const handleForgotVerifyOtp = async (e: React.FormEvent) => {
-    e.preventDefault();
+  // UPDATED: Now accepts optional event for Auto-Verification
+  const handleForgotVerifyOtp = async (e?: React.FormEvent) => {
+    if (e) e.preventDefault();
     if (otp.length !== 6) { setError("Enter the 6-digit code"); return; }
     
     setLoading(true); clearError();
@@ -231,6 +231,19 @@ export default function LoginPage() {
       return { width, color };
   };
   const pwStrength = getPasswordStrength();
+
+  // ==========================================
+  // NEW: Auto-Verify OTP when 6 digits are entered
+  // ==========================================
+  useEffect(() => {
+    if (otp.length === 6 && !loading) {
+      if (view === "signin-otp-verify") handleVerifyLoginOtp();
+      else if (view === "signup-otp") handleVerifySignupOtp();
+      else if (view === "forgot-otp") handleForgotVerifyOtp();
+    }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [otp]);
+
 
   return (
     <div className="min-h-screen bg-white flex flex-col md:flex-row">
@@ -407,13 +420,13 @@ export default function LoginPage() {
               <p className="text-gray-500 text-sm">Code sent to <span className="font-bold text-gray-700">{phone}</span></p>
             </div>
             <form className="space-y-4" onSubmit={handleVerifyLoginOtp}>
-              <input required type="text" inputMode="numeric" maxLength={6}
+              <input required type="text" inputMode="numeric" maxLength={6} autoComplete="one-time-code"
                 value={otp} onChange={(e) => setOtp(e.target.value.replace(/\D/g, ""))} placeholder="000000"
                 className="w-full py-5 border border-gray-200 rounded-2xl outline-none focus:border-green-900 text-center text-3xl font-black tracking-[0.5em] text-green-900 bg-gray-50 transition-all" />
               
               {error && <div className="flex items-start gap-2 bg-red-50 border border-red-100 text-red-700 text-xs font-bold px-4 py-3 rounded-xl"><X size={14} className="shrink-0 mt-0.5" />{error}</div>}
               
-              <button disabled={loading} className="w-full bg-green-900 text-white py-4 rounded-2xl font-bold uppercase tracking-widest text-xs shadow-lg hover:bg-green-800 transition flex items-center justify-center gap-2 disabled:opacity-60">
+              <button disabled={loading || otp.length < 6} className="w-full bg-green-900 text-white py-4 rounded-2xl font-bold uppercase tracking-widest text-xs shadow-lg hover:bg-green-800 transition flex items-center justify-center gap-2 disabled:opacity-60">
                  {loading ? <Loader2 className="animate-spin" size={18} /> : "Verify & Sign In"}
               </button>
             </form>
@@ -472,13 +485,13 @@ export default function LoginPage() {
               <p className="text-gray-500 text-sm">Enter the 6-digit code sent to <span className="font-bold text-gray-700">{phone}</span></p>
             </div>
             <form className="space-y-4" onSubmit={handleVerifySignupOtp}>
-              <input required type="text" inputMode="numeric" maxLength={6}
+              <input required type="text" inputMode="numeric" maxLength={6} autoComplete="one-time-code"
                 value={otp} onChange={(e) => setOtp(e.target.value.replace(/\D/g, ""))} placeholder="000000"
                 className="w-full py-5 border border-gray-200 rounded-2xl outline-none focus:border-green-900 text-center text-3xl font-black tracking-[0.5em] text-green-900 bg-gray-50 transition-all" />
               
               {error && <div className="flex items-start gap-2 bg-red-50 border border-red-100 text-red-700 text-xs font-bold px-4 py-3 rounded-xl"><X size={14} className="shrink-0 mt-0.5" />{error}</div>}
               
-              <button disabled={loading} className="w-full bg-green-900 text-white py-4 rounded-2xl font-bold uppercase tracking-widest text-xs shadow-lg hover:bg-green-800 transition flex items-center justify-center gap-2 disabled:opacity-60">
+              <button disabled={loading || otp.length < 6} className="w-full bg-green-900 text-white py-4 rounded-2xl font-bold uppercase tracking-widest text-xs shadow-lg hover:bg-green-800 transition flex items-center justify-center gap-2 disabled:opacity-60">
                  {loading ? <Loader2 className="animate-spin" size={18} /> : "Continue"}
               </button>
             </form>
@@ -558,13 +571,13 @@ export default function LoginPage() {
               <p className="text-gray-500 text-sm">Enter the code sent to <span className="font-bold text-gray-700">{phone}</span></p>
             </div>
             <form className="space-y-4" onSubmit={handleForgotVerifyOtp}>
-              <input required type="text" inputMode="numeric" maxLength={6}
+              <input required type="text" inputMode="numeric" maxLength={6} autoComplete="one-time-code"
                 value={otp} onChange={(e) => setOtp(e.target.value.replace(/\D/g, ""))} placeholder="000000"
                 className="w-full py-5 border border-gray-200 rounded-2xl outline-none focus:border-green-900 text-center text-3xl font-black tracking-[0.5em] text-green-900 bg-gray-50 transition-all" />
               
               {error && <div className="flex items-start gap-2 bg-red-50 border border-red-100 text-red-700 text-xs font-bold px-4 py-3 rounded-xl"><X size={14} className="shrink-0 mt-0.5" />{error}</div>}
               
-              <button disabled={loading} className="w-full bg-green-900 text-white py-4 rounded-2xl font-bold uppercase tracking-widest text-xs shadow-lg hover:bg-green-800 transition flex items-center justify-center gap-2 disabled:opacity-60">
+              <button disabled={loading || otp.length < 6} className="w-full bg-green-900 text-white py-4 rounded-2xl font-bold uppercase tracking-widest text-xs shadow-lg hover:bg-green-800 transition flex items-center justify-center gap-2 disabled:opacity-60">
                  {loading ? <Loader2 className="animate-spin" size={18} /> : "Verify Code"}
               </button>
             </form>

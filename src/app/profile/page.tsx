@@ -1,6 +1,6 @@
 "use client";
-import React, { useState, useRef, useEffect } from "react";
-import { useRouter } from "next/navigation";
+import React, { useState, useRef, useEffect, Suspense } from "react";
+import { useRouter, useSearchParams } from "next/navigation";
 import Link from "next/link";
 import Image from "next/image";
 import {
@@ -16,7 +16,6 @@ type SecurityView = "main" | "forgot-phone" | "forgot-otp" | "forgot-newpassword
 
 interface Toast { message: string; type: "success" | "error"; }
 
-// --- Types matching the backend schema for Orders ---
 interface Product {
   id: number;
   name: string;
@@ -44,9 +43,10 @@ interface Order {
 
 const API_BASE = process.env.NEXT_PUBLIC_API_BASE_URL || "http://localhost:8000";
 
-export default function ProfilePage() {
+function ProfileContent() {
   const { user, isLoggedIn, loading, logout, updateUser, isGoogleUser } = useAuth();
   const router = useRouter();
+  const searchParams = useSearchParams();
 
   const [activeTab, setActiveTab] = useState<Tab>("profile");
   const [toast, setToast] = useState<Toast | null>(null);
@@ -84,11 +84,20 @@ export default function ProfilePage() {
   const [ordersLoading, setOrdersLoading] = useState(false);
   const [ordersError, setOrdersError] = useState("");
   const [ordersFetched, setOrdersFetched] = useState(false);
+  const [cancellingOrder, setCancellingOrder] = useState<number | null>(null); // NEW: Cancel Order State
 
   // Preferences States
   const [emailNotif, setEmailNotif] = useState(true);
   const [smsNotif, setSmsNotif] = useState(false);
   const [offerNotif, setOfferNotif] = useState(true);
+
+  // Auto-switch tabs if directed from Navbar or Checkout
+  useEffect(() => {
+    const tabParam = searchParams.get("tab");
+    if (tabParam === "orders") {
+      setActiveTab("orders");
+    }
+  }, [searchParams]);
 
   // Watch for context updates
   useEffect(() => {
@@ -202,7 +211,6 @@ export default function ProfilePage() {
       const res = await fetch(`${API_BASE}/profile`, {
         method: "PUT",
         headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
-        // UPDATED: Sending full_name to match backend schema perfectly
         body: JSON.stringify({ 
           full_name: fullname.toUpperCase(), 
           email, 
@@ -240,6 +248,32 @@ export default function ProfilePage() {
       showToast("Password changed successfully!", "success");
     } catch { showToast("Network error", "error"); }
     finally { setSavingPassword(false); }
+  };
+
+  // --- NEW: Cancel Order Action ---
+  const handleCancelOrder = async (orderId: number) => {
+    if (!window.confirm("Are you sure you want to cancel this order?")) return;
+    setCancellingOrder(orderId);
+
+    try {
+      const token = localStorage.getItem("token") || localStorage.getItem("access_token");
+      const res = await fetch(`${API_BASE}/orders/${orderId}/cancel`, {
+        method: "PUT",
+        headers: { Authorization: `Bearer ${token}` }
+      });
+
+      if (res.ok) {
+        showToast("Order cancelled successfully", "success");
+        setOrders(orders.map(o => o.id === orderId ? { ...o, status: "Cancelled" } : o));
+      } else {
+        const data = await res.json();
+        showToast(data.detail || "Failed to cancel order", "error");
+      }
+    } catch (err) {
+      showToast("Network error. Try again.", "error");
+    } finally {
+      setCancellingOrder(null);
+    }
   };
 
   // Forgot Password Actions
@@ -353,7 +387,7 @@ export default function ProfilePage() {
   return (
     <div className="min-h-screen bg-[#f5f4f0]">
       {toast && (
-        <div className={`fixed top-6 right-6 z-[100] flex items-center gap-3 px-5 py-4 rounded-2xl shadow-2xl text-white text-sm font-bold animate-in slide-in-from-top-4 duration-300 ${toast.type === "success" ? "bg-green-800" : "bg-red-600"}`}>
+        <div className={`fixed top-24 right-6 z-[100] flex items-center gap-3 px-5 py-4 rounded-2xl shadow-2xl text-white text-sm font-bold animate-in slide-in-from-top-4 duration-300 ${toast.type === "success" ? "bg-green-800" : "bg-red-600"}`}>
           {toast.type === "success" ? <CheckCircle2 size={18} /> : <AlertCircle size={18} />}
           {toast.message}
         </div>
@@ -724,6 +758,7 @@ export default function ProfilePage() {
                  <div className="space-y-6">
                    {orders.map((order) => (
                      <div key={order.id} className="bg-white rounded-2xl shadow-sm border border-gray-100 overflow-hidden group hover:border-green-900/30 transition-colors">
+                       
                        {/* Order Header */}
                        <div className="bg-gray-50 p-5 md:p-6 border-b border-gray-100 flex flex-col md:flex-row md:items-center justify-between gap-4">
                          <div className="grid grid-cols-2 md:flex md:gap-10 gap-y-4 text-sm">
@@ -741,6 +776,17 @@ export default function ProfilePage() {
                            </div>
                          </div>
                          <div className="flex items-center justify-between md:justify-end gap-4 mt-2 md:mt-0 pt-4 md:pt-0 border-t border-gray-200 md:border-0">
+                           {/* NEW: Cancel Order Button (Only for Pending or Processing orders) */}
+                           {(order.status.toLowerCase() === 'pending' || order.status.toLowerCase() === 'processing') && (
+                              <button 
+                                onClick={() => handleCancelOrder(order.id)}
+                                disabled={cancellingOrder === order.id}
+                                className="text-[10px] font-bold text-red-600 uppercase hover:text-red-800 transition-colors flex items-center gap-1"
+                              >
+                                {cancellingOrder === order.id ? <Loader2 size={12} className="animate-spin"/> : <X size={12}/>}
+                                Cancel Order
+                              </button>
+                           )}
                            <span className={`px-4 py-1.5 rounded-full text-[10px] font-black uppercase tracking-widest border ${getStatusColor(order.status)}`}>
                              {order.status}
                            </span>
@@ -760,6 +806,10 @@ export default function ProfilePage() {
                                  <p className="text-[10px] text-amber-700 bg-amber-50 px-2 py-0.5 rounded font-bold uppercase">{item.product.size}</p>
                                  <p className="text-gray-500 text-xs">Qty: <span className="font-bold text-gray-900">{item.quantity}</span></p>
                                </div>
+                               {/* NEW: Product-specific "Buy Again" link */}
+                               <Link href={`/shop/${item.product_id}`} className="text-[10px] text-green-900 font-bold uppercase hover:underline mt-2 inline-flex items-center gap-1">
+                                 Buy Again <ExternalLink size={10} />
+                               </Link>
                              </div>
                              <div className="text-right shrink-0">
                                <p className="font-bold text-gray-900">₹{item.price_at_purchase * item.quantity}</p>
@@ -770,20 +820,13 @@ export default function ProfilePage() {
                        </div>
 
                        {/* Shipping Footer */}
-                       <div className="bg-gray-50/50 p-5 border-t border-gray-100 flex flex-col md:flex-row gap-4">
-                         <div className="flex-1">
-                           <p className="text-gray-400 font-bold uppercase tracking-widest text-[10px] mb-1 flex items-center gap-1">
-                             <MapPin size={12} className="text-green-900" /> Shipping Address
-                           </p>
-                           <p className="text-xs font-medium text-gray-700 leading-relaxed">
-                             {order.shipping_address}
-                           </p>
-                         </div>
-                         <div className="shrink-0 flex items-end">
-                           <Link href={`/shop`} className="text-[10px] font-bold text-green-900 uppercase tracking-widest hover:text-green-700 flex items-center gap-1 transition-colors">
-                             Buy Again <ExternalLink size={12} />
-                           </Link>
-                         </div>
+                       <div className="bg-gray-50/50 p-5 border-t border-gray-100">
+                         <p className="text-gray-400 font-bold uppercase tracking-widest text-[10px] mb-1 flex items-center gap-1">
+                           <MapPin size={12} className="text-green-900" /> Shipping Address
+                         </p>
+                         <p className="text-xs font-medium text-gray-700 leading-relaxed whitespace-pre-wrap">
+                           {order.shipping_address}
+                         </p>
                        </div>
                      </div>
                    ))}
@@ -826,5 +869,18 @@ export default function ProfilePage() {
 
       </div>
     </div>
+  );
+}
+
+// Wrapper to satisfy Next.js Suspense boundaries when using useSearchParams
+export default function ProfilePage() {
+  return (
+    <Suspense fallback={
+      <div className="min-h-screen flex items-center justify-center bg-[#fafaf9]">
+        <Loader2 className="animate-spin text-green-900" size={36} />
+      </div>
+    }>
+      <ProfileContent />
+    </Suspense>
   );
 }

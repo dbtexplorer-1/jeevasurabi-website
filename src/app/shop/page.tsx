@@ -52,7 +52,7 @@ export default function ShopPage() {
     const fetchProducts = async () => {
       try {
         setLoading(true);
-        // UPDATED: Using the dynamic API_BASE instead of the hardcoded IP
+        // Using the dynamic API_BASE instead of the hardcoded IP
         const res = await fetch(`${API_BASE}/products`);
         if (!res.ok) throw new Error("Failed to fetch products");
         const data = await res.json();
@@ -156,7 +156,7 @@ export default function ShopPage() {
                   onClick={() => addToCart(selectedProduct)}
                   className={`flex-1 py-4 rounded-xl font-bold uppercase tracking-widest text-xs transition-all shadow-lg flex items-center justify-center gap-2 ${isOutOfStock ? 'bg-gray-200 text-gray-400' : 'bg-green-900 text-white hover:bg-green-800'}`}
                 >
-                  <ShoppingCart size={18} /> Add to Cart
+                  <ShoppingCart size={18} /> {isOutOfStock ? 'Sold Out' : 'Add to Cart'}
                 </button>
 
                 <button 
@@ -290,6 +290,22 @@ export default function ShopPage() {
                         <span className="text-base md:text-xl font-black text-green-900">₹{product.price}</span>
                         <span className="text-[10px] font-bold text-amber-700 bg-amber-50 px-2 py-0.5 rounded uppercase">{product.size}</span>
                       </div>
+                      
+                      {/* NEW: QUICK ADD BUTTON */}
+                      <button 
+                        disabled={isOutOfStock}
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          if (!isOutOfStock) addToCart(product);
+                        }}
+                        className={`mt-4 w-full py-3 rounded-xl font-bold uppercase tracking-widest text-[10px] md:text-xs transition-all flex items-center justify-center gap-2 shadow-sm ${
+                          isOutOfStock 
+                            ? 'bg-gray-100 text-gray-400 cursor-not-allowed' 
+                            : 'bg-amber-500 text-white hover:bg-amber-600 hover:shadow-md active:scale-95'
+                        }`}
+                      >
+                        <ShoppingCart size={16} /> {isOutOfStock ? 'Sold Out' : 'Quick Add'}
+                      </button>
                     </div>
                   </div>
                 );

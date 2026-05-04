@@ -282,7 +282,7 @@ export default function HomePage() {
               <div 
                 key={product.id}
                 onClick={() => setSelectedProduct(product)}
-                className="min-w-[280px] md:min-w-[350px] snap-start bg-white rounded-3xl overflow-hidden shadow-sm hover:shadow-xl transition-shadow duration-300 group cursor-pointer"
+                className="min-w-[280px] md:min-w-[350px] snap-start bg-white rounded-3xl overflow-hidden shadow-sm hover:shadow-xl transition-shadow duration-300 group cursor-pointer flex flex-col"
               >
                 <div className="relative aspect-square overflow-hidden bg-gray-50">
                   <img 
@@ -295,22 +295,26 @@ export default function HomePage() {
                   </div>
                 </div>
                 
-                <div className="p-6">
+                <div className="p-6 flex flex-col flex-1">
                   <h3 className="font-serif text-xl text-gray-900 mb-1 group-hover:text-green-800 transition-colors">
                     {product.name}
                   </h3>
                   <p className="text-gray-500 text-sm mb-4">{product.size}</p>
                   
-                  <div className="flex items-center justify-between">
-                    <span className="text-2xl font-bold text-green-900">₹{product.price}</span>
+                  <div className="mt-auto">
+                    <div className="flex items-center justify-between mb-4">
+                      <span className="text-2xl font-black text-green-900">₹{product.price}</span>
+                    </div>
+
+                    {/* NEW: QUICK ADD BUTTON */}
                     <button 
                       onClick={(e) => {
                         e.stopPropagation();
                         addToCart(product);
                       }}
-                      className="bg-amber-600 text-white p-3 rounded-xl hover:bg-amber-700 transition-colors shadow-md active:scale-90"
+                      className="w-full bg-amber-500 text-white py-3.5 rounded-xl font-bold uppercase tracking-widest text-xs hover:bg-amber-600 transition-all flex items-center justify-center gap-2 shadow-sm hover:shadow-md active:scale-95"
                     >
-                      <ShoppingCart size={20} />
+                      <ShoppingCart size={16} /> Quick Add
                     </button>
                   </div>
                 </div>

@@ -5,16 +5,18 @@ import Footer from "@/components/Footer";
 import { useCart } from "@/context/CartContext";
 import { useWishlist } from "@/context/WishlistContext";
 import { useAuth } from "@/context/AuthContext";
-import { User, X, LogIn, Package, Settings, ShoppingCart, Trash2, Plus, Minus, Heart } from 'lucide-react';
+import { User, X, LogIn, Package, Settings, ShoppingCart, Trash2, Plus, Minus, Heart, ChevronRight } from 'lucide-react';
 import Link from 'next/link';
 import Image from 'next/image';
 import { usePathname, useRouter } from 'next/navigation';
 
 export default function LayoutContent({ children }: { children: React.ReactNode }) {
-  const { cart, cartCount, totalPrice, updateQuantity, removeFromCart, addToCart } = useCart();
+  // NEW: Grab the global isCartOpen state from our updated context!
+  const { cart, cartCount, totalPrice, updateQuantity, removeFromCart, addToCart, isCartOpen, setIsCartOpen } = useCart();
+  
   const { wishlist, wishlistCount, toggleWishlist } = useWishlist();
   const { isLoggedIn } = useAuth();
-  const [isCartOpen, setIsCartOpen] = useState(false);
+  
   const [isWishlistOpen, setIsWishlistOpen] = useState(false);
   const [isProfileOpen, setIsProfileOpen] = useState(false);
   const [toast, setToast] = useState<string | null>(null);
@@ -24,23 +26,26 @@ export default function LayoutContent({ children }: { children: React.ReactNode 
 
   const shouldHideHeaderFooter = pathname.startsWith('/admin') || pathname === '/login' || pathname === '/checkout';
 
-  // EXISTING: Toast notification listener
+  // Toast notification listener
   useEffect(() => {
     let timeoutId: NodeJS.Timeout;
+    
     const handleToast = (e: Event) => {
       const customEvent = e as CustomEvent<string>;
       setToast(customEvent.detail);
       clearTimeout(timeoutId);
       timeoutId = setTimeout(() => setToast(null), 3000);
     };
+
     window.addEventListener('show-toast', handleToast);
+    
     return () => {
       window.removeEventListener('show-toast', handleToast);
       clearTimeout(timeoutId);
     };
   }, []);
 
-  // NEW: Scroll to top on route change (Fixes the scroll jump bug)
+  // Scroll to top on route change
   useEffect(() => {
     window.scrollTo(0, 0);
   }, [pathname]);
@@ -104,24 +109,23 @@ export default function LayoutContent({ children }: { children: React.ReactNode 
                       <p className="text-xs text-amber-700 font-bold uppercase">{item.size}</p>
                       <div className="flex items-center justify-between mt-2">
                         
-                        {/* HIGH CONTRAST QUANTITY SELECTOR */}
                         <div className="flex items-center border-2 border-gray-200 rounded-lg overflow-hidden bg-white shadow-sm">
                           <button 
                             onClick={() => updateQuantity(item.id, -1)} 
-                            className="p-2 text-gray-600 hover:text-green-900 hover:bg-green-50 active:bg-green-100 transition-colors"
+                            className="p-3 text-gray-600 hover:text-green-900 hover:bg-green-50 active:bg-green-100 transition-colors"
                           >
-                            <Minus size={14} strokeWidth={3} />
+                            <Minus size={16} strokeWidth={3} />
                           </button>
                           
-                          <span className="w-10 text-center font-black text-gray-900 text-sm">
+                          <span className="w-14 text-center font-black text-gray-900 text-base">
                             {item.quantity}
                           </span>
                           
                           <button 
                             onClick={() => updateQuantity(item.id, 1)} 
-                            className="p-2 text-gray-600 hover:text-green-900 hover:bg-green-50 active:bg-green-100 transition-colors"
+                            className="p-3 text-gray-600 hover:text-green-900 hover:bg-green-50 active:bg-green-100 transition-colors"
                           >
-                            <Plus size={14} strokeWidth={3} />
+                            <Plus size={16} strokeWidth={3} />
                           </button>
                         </div>
                         
@@ -136,16 +140,27 @@ export default function LayoutContent({ children }: { children: React.ReactNode 
 
             {cart.length > 0 && (
               <div className="p-6 bg-gray-50 border-t">
-                <div className="flex justify-between mb-4 font-bold text-xl">
+                <div className="flex justify-between mb-6 font-bold text-2xl">
                   <span>Total</span>
                   <span className="text-green-900">₹{totalPrice}</span>
                 </div>
-                <button 
-                  onClick={handleProceedToCheckout}
-                  className="w-full bg-green-900 text-white py-4 rounded-xl font-bold uppercase tracking-widest hover:bg-green-800 transition-all"
-                >
-                  Proceed to Checkout
-                </button>
+                <div className="flex flex-col gap-3">
+                  <button 
+                    onClick={handleProceedToCheckout}
+                    className="w-full bg-green-900 text-white py-4 rounded-xl font-bold uppercase tracking-widest hover:bg-green-800 transition-all shadow-lg flex items-center justify-center gap-2"
+                  >
+                    Checkout <ChevronRight size={18} />
+                  </button>
+                  <button 
+                    onClick={() => {
+                      setIsCartOpen(false);
+                      router.push('/shop');
+                    }}
+                    className="w-full bg-white border-2 border-gray-200 text-green-900 py-4 rounded-xl font-bold uppercase tracking-widest hover:bg-gray-100 transition-all"
+                  >
+                    Continue Shopping
+                  </button>
+                </div>
               </div>
             )}
           </div>
@@ -186,7 +201,10 @@ export default function LayoutContent({ children }: { children: React.ReactNode 
                         <span className="font-bold text-lg text-green-900">₹{item.price}</span>
                         <div className="flex items-center gap-3">
                           <button 
-                            onClick={() => addToCart(item)}
+                            onClick={() => {
+                              addToCart(item);
+                              setIsWishlistOpen(false); // Close wishlist when adding to cart
+                            }}
                             className="bg-green-900 text-white px-4 py-2 rounded-lg hover:bg-green-800 transition-colors text-xs font-bold uppercase tracking-wider"
                           >
                             Add to Cart

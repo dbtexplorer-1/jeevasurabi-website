@@ -304,6 +304,35 @@ def create_order(
 def get_my_orders(current_user: models.UserDB = Depends(get_current_user), db: Session = Depends(get_db)):
     return db.query(models.OrderDB).filter(models.OrderDB.user_id == current_user.id).order_by(models.OrderDB.created_at.desc()).all()
 
+# NEW: User Cancel Order Route
+@app.put("/orders/{order_id}/cancel")
+def cancel_order(
+    order_id: int, 
+    current_user: models.UserDB = Depends(get_current_user), 
+    db: Session = Depends(get_db)
+):
+    order = db.query(models.OrderDB).filter(
+        models.OrderDB.id == order_id, 
+        models.OrderDB.user_id == current_user.id
+    ).first()
+    
+    if not order:
+        raise HTTPException(status_code=404, detail="Order not found")
+        
+    if order.status.lower() not in ["pending", "processing"]:
+        raise HTTPException(status_code=400, detail="Order cannot be cancelled at this stage")
+        
+    # Restore stock for each item
+    for item in order.items:
+        product = db.query(models.ProductDB).filter(models.ProductDB.id == item.product_id).first()
+        if product:
+            product.stock_quantity += item.quantity
+            
+    order.status = "Cancelled"
+    db.commit()
+    
+    return {"message": "Order cancelled successfully", "status": order.status}
+
 
 # ==========================================
 # 7. ADMIN ROUTES (Secured)

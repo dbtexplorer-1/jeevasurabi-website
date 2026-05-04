@@ -20,6 +20,9 @@ interface CartContextType {
   clearCart: () => void;
   totalPrice: number;
   cartCount: number;
+  // NEW: Global UI state for the cart drawer
+  isCartOpen: boolean;
+  setIsCartOpen: (isOpen: boolean) => void;
 }
 
 const CartContext = createContext<CartContextType | undefined>(undefined);
@@ -27,6 +30,9 @@ const CartContext = createContext<CartContextType | undefined>(undefined);
 export function CartProvider({ children }: { children: React.ReactNode }) {
   const [cart, setCart] = useState<Product[]>([]);
   const [isInitialized, setIsInitialized] = useState(false);
+  
+  // NEW: Global state to control if the cart drawer is visible
+  const [isCartOpen, setIsCartOpen] = useState(false);
 
   // 1. Load cart from local storage on startup
   useEffect(() => {
@@ -49,7 +55,7 @@ export function CartProvider({ children }: { children: React.ReactNode }) {
   }, [cart, isInitialized]);
 
   const addToCart = (product: any) => {
-    // SECURITY CHECK: Block adding if out of stock
+    // SECURITY CHECK 1: Block adding if out of stock
     if (product.stock_quantity <= 0) {
       if (typeof window !== 'undefined') {
         window.dispatchEvent(new CustomEvent('show-toast', { 
@@ -59,27 +65,34 @@ export function CartProvider({ children }: { children: React.ReactNode }) {
       return;
     }
 
+    // SECURITY CHECK 2: Check if already in cart and at max stock limit
+    const existingItem = cart.find((item) => item.id === product.id);
+    
+    if (existingItem && existingItem.quantity >= product.stock_quantity) {
+      if (typeof window !== 'undefined') {
+        window.dispatchEvent(new CustomEvent('show-toast', { 
+          detail: `Only ${product.stock_quantity} units available in stock.` 
+        }));
+      }
+      return; // Stop here, do not update state
+    }
+
+    // If we pass checks:
+    // 1. Show Toast
+    if (typeof window !== 'undefined') {
+      window.dispatchEvent(new CustomEvent('show-toast', { detail: 'Added to cart' }));
+    }
+
+    // 2. AUTO-OPEN: Set global cart state to true
+    setIsCartOpen(true);
+
+    // 3. Update State (Pure Function)
     setCart((prev) => {
       const existing = prev.find((item) => item.id === product.id);
-      
       if (existing) {
-        // PREVENT adding more than available stock
-        if (existing.quantity >= product.stock_quantity) {
-          if (typeof window !== 'undefined') {
-            window.dispatchEvent(new CustomEvent('show-toast', { 
-              detail: `Only ${product.stock_quantity} units available in stock.` 
-            }));
-          }
-          return prev;
-        }
-
         return prev.map((item) =>
           item.id === product.id ? { ...item, quantity: item.quantity + 1 } : item
         );
-      }
-
-      if (typeof window !== 'undefined') {
-        window.dispatchEvent(new CustomEvent('show-toast', { detail: 'Added to cart' }));
       }
       return [...prev, { ...product, quantity: 1 }];
     });
@@ -112,7 +125,17 @@ export function CartProvider({ children }: { children: React.ReactNode }) {
   const cartCount = cart.reduce((acc, item) => acc + item.quantity, 0);
 
   return (
-    <CartContext.Provider value={{ cart, addToCart, removeFromCart, updateQuantity, clearCart, totalPrice, cartCount }}>
+    <CartContext.Provider value={{ 
+      cart, 
+      addToCart, 
+      removeFromCart, 
+      updateQuantity, 
+      clearCart, 
+      totalPrice, 
+      cartCount,
+      isCartOpen,
+      setIsCartOpen
+    }}>
       {children}
     </CartContext.Provider>
   );

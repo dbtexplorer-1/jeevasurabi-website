@@ -25,7 +25,7 @@ export default function CheckoutPage() {
   const [step, setStep] = useState<CheckoutStep>("shipping");
   const [isProcessing, setIsProcessing] = useState(false);
   const [orderPlaced, setOrderPlaced] = useState(false); 
-  const [countdown, setCountdown] = useState(10); // NEW: 10 second countdown
+  const [countdown, setCountdown] = useState(10);
   const [error, setError] = useState("");
 
   const [shippingInfo, setShippingInfo] = useState({
@@ -87,7 +87,7 @@ export default function CheckoutPage() {
     }
   }, [user]);
 
-  // NEW: 10-Second Auto Redirect Effect
+  // 10-Second Auto Redirect Effect
   useEffect(() => {
     if (orderPlaced && countdown > 0) {
       const timer = setTimeout(() => setCountdown(countdown - 1), 1000);
@@ -195,7 +195,7 @@ export default function CheckoutPage() {
     <div className="min-h-screen bg-[#f5f4f0] py-8 md:py-12 px-4 relative overflow-hidden">
       
       {/* ========================================== */}
-      {/* UPDATED: SUCCESS ANIMATION OVERLAY */}
+      {/* SUCCESS ANIMATION OVERLAY */}
       {/* ========================================== */}
       {orderPlaced && (
         <div className="fixed inset-0 z-[100] flex flex-col items-center justify-center bg-green-900 transition-all duration-500">
@@ -264,8 +264,9 @@ export default function CheckoutPage() {
              >
                Continue Shopping
              </button>
+             {/* FIXED: Now routes directly to the orders tab */}
              <button 
-                onClick={() => router.push("/profile")} 
+                onClick={() => router.push("/profile?tab=orders")} 
                 className="flex-1 bg-transparent border-2 border-white/30 text-white px-6 py-4 rounded-xl font-bold text-sm uppercase tracking-widest hover:bg-white/10 transition-colors text-center"
              >
                View My Orders
