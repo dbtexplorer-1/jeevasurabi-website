@@ -10,6 +10,7 @@ import {
   RotateCcw, KeyRound, ArrowLeft, Calendar, ReceiptText, ExternalLink, MapPin
 } from "lucide-react";
 import { useAuth } from "@/context/AuthContext";
+import { API_BASE_URL } from "@/lib/api";
 
 type Tab = "profile" | "security" | "orders" | "preferences";
 type SecurityView = "main" | "forgot-phone" | "forgot-otp" | "forgot-newpassword" | "forgot-done";
@@ -41,7 +42,7 @@ interface Order {
   items: OrderItem[];
 }
 
-const API_BASE = process.env.NEXT_PUBLIC_API_BASE_URL || "http://localhost:8000";
+const API_BASE = API_BASE_URL;
 
 function ProfileContent() {
   const { user, isLoggedIn, loading, logout, updateUser, isGoogleUser } = useAuth();

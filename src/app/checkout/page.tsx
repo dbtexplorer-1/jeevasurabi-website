@@ -5,15 +5,11 @@ import Image from "next/image";
 import Link from "next/link";
 import { useAuth } from "@/context/AuthContext";
 import { useCart } from "@/context/CartContext";
+import { apiFetch, getAuthToken } from "@/lib/api";
 import {
   ChevronRight, ArrowLeft, MapPin, CreditCard,
   CheckCircle2, ShoppingBag, ShieldCheck, Loader2, Truck, Package, ClipboardList, Check
 } from "lucide-react";
-
-// Dynamically determine the API base URL
-const API_BASE = typeof window !== "undefined" 
-  ? `http://${window.location.hostname}:8000` 
-  : "http://localhost:8000";
 
 type CheckoutStep = "shipping" | "summary" | "payment";
 
@@ -133,7 +129,7 @@ export default function CheckoutPage() {
     setError("");
 
     try {
-      const token = localStorage.getItem("token");
+      const token = getAuthToken();
       if (!token) throw new Error("Authentication error. Please log in again.");
 
       const fullAddress = `${shippingInfo.firstName} ${shippingInfo.lastName}, ${shippingInfo.address}, ${shippingInfo.apartment ? shippingInfo.apartment + ', ' : ''}${shippingInfo.city}, ${shippingInfo.state} - ${shippingInfo.pincode}. Phone: ${shippingInfo.phone}`;
@@ -143,7 +139,7 @@ export default function CheckoutPage() {
         quantity: item.quantity
       }));
 
-      const res = await fetch(`${API_BASE}/orders`, {
+      await apiFetch("/orders", {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
@@ -154,11 +150,6 @@ export default function CheckoutPage() {
           items: orderItems
         })
       });
-
-      if (!res.ok) {
-        const errorData = await res.json();
-        throw new Error(errorData.detail || "Failed to place order");
-      }
 
       // Success! Trigger the animation, countdown handles redirect
       setOrderPlaced(true);

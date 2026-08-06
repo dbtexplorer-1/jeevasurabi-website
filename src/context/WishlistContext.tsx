@@ -1,17 +1,8 @@
 "use client";
 import React, { createContext, useContext, useState, useEffect } from 'react';
+import type { Product } from '@/types/api';
 
-// UPDATED: Added stock_quantity, category, and description to match your database
-export interface Product {
-  id: number;
-  name: string;
-  category: string;
-  size: string;
-  price: number;
-  img: string;
-  stock_quantity: number;
-  description?: string;
-}
+export type { Product } from '@/types/api';
 
 interface WishlistContextType {
   wishlist: Product[];

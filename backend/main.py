@@ -146,8 +146,15 @@ class ProductCreateUpdate(BaseModel):
     size: str
     price: float
     img: str
-    stock_quantity: int
+    # Inventory is managed as an availability state rather than a visible count.
+    in_stock: bool = True
     description: Optional[str] = None
+
+
+# Keep the existing database column for order validation without exposing a
+# stock count in the admin experience. A product marked in stock will not be
+# accidentally sold out after a handful of purchases.
+IN_STOCK_QUANTITY = 1_000_000
 
 
 # ==========================================
@@ -188,6 +195,11 @@ def submit_inquiry(
 # ==========================================
 # 5. USER PROFILE & UPLOADS ROUTES
 # ==========================================
+
+@app.get("/me", response_model=models.UserResponse)
+def get_my_profile(current_user: models.UserDB = Depends(get_current_user)):
+    """Return the currently authenticated user's authoritative profile data."""
+    return current_user
 
 @app.post("/upload-profile-pic")
 async def upload_profile_pic(
@@ -385,7 +397,9 @@ def admin_create_product(
     admin_user: models.UserDB = Depends(verify_admin_network), 
     db: Session = Depends(get_db)
 ):
-    new_product = models.ProductDB(**req.dict())
+    product_data = req.dict(exclude={"in_stock"})
+    product_data["stock_quantity"] = IN_STOCK_QUANTITY if req.in_stock else 0
+    new_product = models.ProductDB(**product_data)
     db.add(new_product)
     db.commit()
     db.refresh(new_product)
@@ -402,8 +416,9 @@ def admin_update_product(
     if not product:
         raise HTTPException(status_code=404, detail="Product not found")
     
-    for key, value in req.dict().items():
+    for key, value in req.dict(exclude={"in_stock"}).items():
         setattr(product, key, value)
+    product.stock_quantity = IN_STOCK_QUANTITY if req.in_stock else 0
         
     db.commit()
     db.refresh(product)

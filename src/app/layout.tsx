@@ -7,6 +7,8 @@ import { CartProvider } from "@/context/CartContext";
 import { WishlistProvider } from "@/context/WishlistContext";
 import LayoutContent from "@/components/LayoutContent";
 
+const googleClientId = process.env.NEXT_PUBLIC_GOOGLE_CLIENT_ID;
+
 const geistSans = Geist({
   variable: "--font-geist-sans",
   subsets: ["latin"],
@@ -33,8 +35,7 @@ export default function RootLayout({
   return (
     <html lang="en">
       <body className={`${geistSans.variable} ${geistMono.variable} antialiased font-medium`}>
-        {/* I've updated the clientId below with your real ID from your screenshot */}
-        <GoogleOAuthProvider clientId="886676518253-p11r15ftrr291kkb77t5mdd3aus0hhlv.apps.googleusercontent.com">
+        <GoogleOAuthProvider clientId={googleClientId ?? ""}>
           <AuthProvider>
             <CartProvider>
               <WishlistProvider>

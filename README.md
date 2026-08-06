@@ -1,36 +1,66 @@
-This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
+# JeevaSurabi Website
 
-## Getting Started
+JeevaSurabi is an e-commerce storefront for traditional food products. The project consists of a Next.js frontend and a FastAPI backend.
 
-First, run the development server:
+## Prerequisites
 
-```bash
-npm run dev
-# or
-yarn dev
-# or
-pnpm dev
-# or
-bun dev
+- Node.js 20 or newer
+- Python 3.11 or newer
+- A PostgreSQL/MySQL-compatible database supported by SQLAlchemy
+
+## Environment configuration
+
+Copy the example files before starting the app. Never commit the resulting `.env` files.
+
+```powershell
+Copy-Item .env.example .env
+Copy-Item backend\.env.example backend\.env
 ```
 
-Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
+Set the following values:
 
-You can start editing the page by modifying `app/page.tsx`. The page auto-updates as you edit the file.
+- `NEXT_PUBLIC_API_BASE_URL`: public address of the FastAPI service.
+- `NEXT_PUBLIC_GOOGLE_CLIENT_ID`: Google OAuth client ID used by the frontend.
+- `DATABASE_URL`: SQLAlchemy database URL.
+- `JWT_SECRET_KEY`: long random secret used to sign tokens.
+- `GOOGLE_CLIENT_ID`: the same OAuth client ID used by the frontend.
 
-This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
+## Local development
 
-## Learn More
+Install and run the frontend:
 
-To learn more about Next.js, take a look at the following resources:
+```powershell
+npm install
+npm run dev
+```
 
-- [Next.js Documentation](https://nextjs.org/docs) - learn about Next.js features and API.
-- [Learn Next.js](https://nextjs.org/learn) - an interactive Next.js tutorial.
+Install and run the backend in a separate terminal:
 
-You can check out [the Next.js GitHub repository](https://github.com/vercel/next.js) - your feedback and contributions are welcome!
+```powershell
+python -m venv backend\venv
+backend\venv\Scripts\Activate.ps1
+pip install -r backend\requirements.txt
+Set-Location backend
+python seed.py
+uvicorn main:app --reload --port 8000
+```
 
-## Deploy on Vercel
+The storefront runs at `http://localhost:3000` and the API documentation is available at `http://localhost:8000/docs`.
 
-The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
+## Validation and tests
 
-Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.
+```powershell
+npm run lint
+npm run test
+python -m pytest backend/tests
+```
+
+The frontend tests cover cart stock behavior. Backend tests cover profile retrieval, OTP expiry, order stock deduction, cancellation stock restoration, out-of-stock rejection, and admin access control.
+
+## Deployment checklist
+
+- Set all production environment variables in the hosting platform.
+- Use HTTPS URLs for the frontend and API base URL.
+- Run the backend behind a production ASGI server and managed database.
+- Configure CORS to only allow the deployed storefront domain.
+- Do not use the development seed command against a production database.

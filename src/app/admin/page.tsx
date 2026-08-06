@@ -9,36 +9,17 @@ import {
   Loader2, ShieldAlert, Plus, Edit3, Trash2, X, Save, MapPin, UploadCloud
 } from 'lucide-react';
 import { useAuth } from "@/context/AuthContext";
+import { API_BASE_URL } from "@/lib/api";
+import type { Order as ApiOrder, Product as ApiProduct } from "@/types/api";
 
-const API_BASE = process.env.NEXT_PUBLIC_API_BASE_URL || "http://localhost:8000";
+const API_BASE = API_BASE_URL;
 
 // --- Types ---
-interface OrderItem {
-  id: number;
-  quantity: number;
-  price_at_purchase: number;
-  product: { name: string };
+interface Product extends ApiProduct {
+  in_stock: boolean;
 }
 
-interface Order {
-  id: number;
-  total_amount: number;
-  status: string;
-  shipping_address: string;
-  created_at: string;
-  items: OrderItem[];
-}
-
-interface Product {
-  id: number;
-  name: string;
-  category: string;
-  size: string;
-  price: number;
-  img: string;
-  stock_quantity: number;
-  description?: string;
-}
+type Order = ApiOrder;
 
 // NEW: Inquiry Interface
 interface Inquiry {
@@ -110,7 +91,10 @@ export default function AdminDashboard() {
         const prodRes = await fetch(`${API_BASE}/products`);
         if (prodRes.ok) {
           const prodData = await prodRes.json();
-          setProducts(prodData);
+          setProducts(prodData.map((product: Omit<Product, "in_stock">) => ({
+            ...product,
+            in_stock: product.stock_quantity > 0,
+          })));
         }
 
         // 3. Fetch Inquiries
@@ -229,8 +213,15 @@ export default function AdminDashboard() {
       
       const method = isNewProduct ? "POST" : "PUT";
 
-      const { id, ...productPayload } = editingProduct;
-      const bodyData = isNewProduct ? productPayload : editingProduct;
+      const productPayload = {
+        name: editingProduct.name,
+        category: editingProduct.category,
+        size: editingProduct.size,
+        price: editingProduct.price,
+        img: editingProduct.img,
+        in_stock: editingProduct.in_stock,
+        description: editingProduct.description,
+      };
 
       const res = await fetch(url, {
         method,
@@ -238,17 +229,21 @@ export default function AdminDashboard() {
           "Content-Type": "application/json",
           "Authorization": `Bearer ${token}` 
         },
-        body: JSON.stringify(bodyData)
+        body: JSON.stringify(productPayload)
       });
 
       if (!res.ok) throw new Error("Failed to save product");
       
       const savedProduct = await res.json();
+      const savedProductWithStatus = {
+        ...savedProduct,
+        in_stock: savedProduct.stock_quantity > 0,
+      };
       
       if (isNewProduct) {
-        setProducts([...products, savedProduct]);
+        setProducts([...products, savedProductWithStatus]);
       } else {
-        setProducts(products.map(p => p.id === savedProduct.id ? savedProduct : p));
+        setProducts(products.map(p => p.id === savedProductWithStatus.id ? savedProductWithStatus : p));
       }
       
       setEditingProduct(null);
@@ -376,7 +371,7 @@ export default function AdminDashboard() {
                 <item.icon size={20} />
                 {item.name}
               </div>
-              {item.badge > 0 && (
+              {(item.badge ?? 0) > 0 && (
                 <span className={`px-2 py-0.5 rounded-full text-[10px] font-black ${activeTab === item.name ? 'bg-red-500 text-white' : 'bg-red-500 text-white'}`}>
                   {item.badge}
                 </span>
@@ -559,7 +554,7 @@ export default function AdminDashboard() {
             <div className="p-6 border-b border-gray-50 flex justify-between items-center">
               <h3 className="text-lg font-bold text-gray-900 uppercase">Inventory</h3>
               <button 
-                onClick={() => setEditingProduct({ id: 0, name: "", category: "", size: "", price: 0, img: "", stock_quantity: 0, description: "" })}
+                onClick={() => setEditingProduct({ id: 0, name: "", category: "", size: "", price: 0, img: "", stock_quantity: 0, in_stock: true, description: "" })}
                 className="flex items-center gap-2 px-4 py-2 bg-green-900 text-white rounded-xl text-xs font-bold uppercase tracking-widest hover:bg-green-800 transition-colors"
               >
                 <Plus size={14} /> Add Product
@@ -603,17 +598,13 @@ export default function AdminDashboard() {
                     <td className="px-6 py-4 text-xs font-bold text-gray-500 uppercase">{product.category}</td>
                     <td className="px-6 py-4 text-sm font-black text-green-900">₹{product.price}</td>
                     <td className="px-6 py-4">
-                      {product.stock_quantity <= 0 ? (
+                      {!product.in_stock ? (
                         <span className="px-3 py-1 bg-red-50 text-red-600 border border-red-100 rounded-lg text-[10px] font-black uppercase tracking-widest flex items-center gap-2 w-max">
                           <span className="w-1.5 h-1.5 rounded-full bg-red-600"></span> Out of Stock
                         </span>
-                      ) : product.stock_quantity < 10 ? (
-                        <span className="px-3 py-1 bg-amber-50 text-amber-600 border border-amber-100 rounded-lg text-[10px] font-black uppercase tracking-widest flex items-center gap-2 w-max">
-                          <span className="w-1.5 h-1.5 rounded-full bg-amber-500 animate-pulse"></span> Low Stock ({product.stock_quantity})
-                        </span>
                       ) : (
                         <span className="px-3 py-1 bg-green-50 text-green-700 border border-green-200 rounded-lg text-[10px] font-black uppercase tracking-widest flex items-center gap-2 w-max">
-                          <span className="w-1.5 h-1.5 rounded-full bg-green-500"></span> In Stock ({product.stock_quantity})
+                          <span className="w-1.5 h-1.5 rounded-full bg-green-500"></span> In Stock
                         </span>
                       )}
                     </td>
@@ -829,12 +820,15 @@ export default function AdminDashboard() {
                   </div>
 
                   <div>
-                    <label className="block text-xs font-bold text-gray-500 uppercase tracking-wider mb-2 flex items-center justify-between">
-                      Stock Quantity
-                      {editingProduct.stock_quantity <= 0 && <span className="text-red-500 text-[10px]">Out of Stock</span>}
-                    </label>
-                    <input required type="number" min="0" value={editingProduct.stock_quantity || ""} onChange={(e) => setEditingProduct({...editingProduct, stock_quantity: parseInt(e.target.value) || 0})} 
-                      className={`w-full px-4 py-3 border-2 rounded-xl focus:border-green-900 outline-none font-black ${editingProduct.stock_quantity <= 0 ? 'border-red-300 text-red-600 bg-red-50' : 'border-gray-100 text-gray-900'}`} />
+                    <label className="block text-xs font-bold text-gray-500 uppercase tracking-wider mb-2">Stock Status</label>
+                    <select
+                      value={editingProduct.in_stock ? "in_stock" : "out_of_stock"}
+                      onChange={(e) => setEditingProduct({ ...editingProduct, in_stock: e.target.value === "in_stock" })}
+                      className={`w-full px-4 py-3 border-2 rounded-xl focus:border-green-900 outline-none font-bold ${editingProduct.in_stock ? 'border-green-200 text-green-800 bg-green-50' : 'border-red-300 text-red-600 bg-red-50'}`}
+                    >
+                      <option value="in_stock">In Stock</option>
+                      <option value="out_of_stock">Out of Stock</option>
+                    </select>
                   </div>
 
                   {/* CUSTOM IMAGE UPLOAD UI */}

@@ -4,41 +4,12 @@ import { useRouter } from "next/navigation";
 import Image from "next/image";
 import Link from "next/link";
 import { useAuth } from "@/context/AuthContext";
+import { apiFetch } from "@/lib/api";
+import type { Order } from "@/types/api";
 import { 
   Package, ChevronLeft, Loader2, AlertCircle, 
   MapPin, Calendar, ReceiptText, ExternalLink
 } from "lucide-react";
-
-// Dynamically determine the API base URL
-const API_BASE = typeof window !== "undefined" 
-  ? `http://${window.location.hostname}:8000` 
-  : "http://localhost:8000";
-
-// --- Types matching the backend schema ---
-interface Product {
-  id: number;
-  name: string;
-  category: string;
-  size: string;
-  img: string;
-}
-
-interface OrderItem {
-  id: int;
-  product_id: number;
-  quantity: number;
-  price_at_purchase: number;
-  product: Product;
-}
-
-interface Order {
-  id: number;
-  total_amount: number;
-  status: string;
-  shipping_address: string;
-  created_at: string;
-  items: OrderItem[];
-}
 
 export default function OrdersPage() {
   const router = useRouter();
@@ -56,18 +27,9 @@ export default function OrdersPage() {
 
     const fetchOrders = async () => {
       try {
-        const token = localStorage.getItem("token") || localStorage.getItem("access_token");
-        if (!token) throw new Error("No authentication token found");
-
-        const res = await fetch(`${API_BASE}/my-orders`, {
-          headers: {
-            "Authorization": `Bearer ${token}`
-          }
-        });
-
-        if (!res.ok) throw new Error("Failed to fetch orders");
+        const res = await apiFetch("/my-orders", {}, { authenticated: true });
         
-        const data = await res.json();
+        const data: Order[] = await res.json();
         setOrders(data);
       } catch (err: any) {
         setError(err.message || "Something went wrong while fetching your orders.");

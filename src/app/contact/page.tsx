@@ -3,8 +3,8 @@ import React, { useState } from 'react';
 import Image from 'next/image';
 import { Mail, Phone, MapPin, Send, Clock, Loader2, CheckCircle2, AlertCircle } from 'lucide-react';
 import { siteConfig } from "@/config/site";
+import { apiFetch, getAuthToken } from "@/lib/api";
 
-const API_BASE = process.env.NEXT_PUBLIC_API_BASE_URL || "http://localhost:8000";
 
 interface Toast { message: string; type: "success" | "error"; }
 
@@ -33,13 +33,13 @@ export default function ContactPage() {
     try {
       const combinedMessage = `Phone: ${formData.phone}\nSubject: ${formData.subject}\n\nMessage:\n${formData.message}`;
 
-      const token = localStorage.getItem("token") || localStorage.getItem("access_token");
-      const headers: any = { "Content-Type": "application/json" };
-      if (token) headers["Authorization"] = `Bearer ${token}`; 
-
-      const res = await fetch(`${API_BASE}/inquiries`, {
+      const token = getAuthToken();
+      const res = await apiFetch("/inquiries", {
         method: "POST",
-        headers,
+        headers: {
+          "Content-Type": "application/json",
+          ...(token ? { Authorization: `Bearer ${token}` } : {}),
+        },
         body: JSON.stringify({
           name: formData.name,
           email: formData.email,
@@ -47,12 +47,8 @@ export default function ContactPage() {
         })
       });
 
-      if (res.ok) {
-        showToast("Thank you! Your message has been sent.", "success");
-        setFormData({ name: '', email: '', phone: '', subject: '', message: '' });
-      } else {
-        showToast("Failed to send message. Please try again.", "error");
-      }
+      showToast("Thank you! Your message has been sent.", "success");
+      setFormData({ name: '', email: '', phone: '', subject: '', message: '' });
     } catch (error) {
       console.error(error);
       showToast("Network error. Please check your connection.", "error");
